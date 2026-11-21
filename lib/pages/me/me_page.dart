@@ -9,6 +9,7 @@ import '../../core/notify/download_notifier.dart';
 import '../../core/update_checker.dart';
 import '../../state/app_state.dart';
 import '../../state/netdisk123_state.dart';
+import '../../state/uc_state.dart';
 import '../../state/upload_manager.dart';
 import '../../state/xunlei_state.dart';
 import '../../theme/app_theme.dart';
@@ -23,7 +24,8 @@ class MePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([AppState.I, XunleiState.I, Netdisk123State.I]),
+      listenable: Listenable.merge(
+          [AppState.I, UcState.I, XunleiState.I, Netdisk123State.I]),
       builder: (context, _) {
         final app = AppState.I;
         final colors = MiuixTheme.of(context).colors;
@@ -75,6 +77,23 @@ class MePage extends StatelessWidget {
                 ? _LogoutButton(
                     onPressed: () => _confirmLogout(context, '夸克网盘',
                         () => app.logout()),
+                  )
+                : null,
+          ),
+          const MiuixHorizontalDivider(),
+          _buildAccountRow(
+            context: context,
+            icon: const NetdiskLogo(provider: NetdiskProvider.uc),
+            title: 'UC 网盘',
+            subtitle: UcState.I.isLoggedIn
+                ? ((UcState.I.user?.label.isNotEmpty ?? false)
+                    ? UcState.I.user!.label
+                    : '已登录')
+                : '未登录，请到「网盘」页登录',
+            trailing: UcState.I.isLoggedIn
+                ? _LogoutButton(
+                    onPressed: () => _confirmLogout(
+                        context, 'UC 网盘', () => UcState.I.logout()),
                   )
                 : null,
           ),

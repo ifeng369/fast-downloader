@@ -3,6 +3,7 @@
 夸克网盘不限速下载工具（Android / Windows / iOS）。Android 与 Windows 使用 [Gopeed](https://github.com/GopeedLab/gopeed)，iOS 使用基于 URLSession 的原生后台下载器，支持：
 
 - 夸克网盘扫码登录 / Cookie 登录
+- UC 网盘 Cookie 登录、文件浏览、多选批量下载（直链支持 Range 分片，走同一套 Gopeed 多线程）
 - 网盘文件浏览、搜索（支持 AI 识别内容搜索，可直接搜照片内容词）
 - 相册：自动扫描网盘内全部照片，网格浏览、全屏查看、一键下载
 - 分享链接解析（提取码自动识别）、批量转存
@@ -25,6 +26,8 @@ Flutter App (UI)
   ├── QuarkApi (Dart)  → drive.quark.cn / pan.quark.cn 夸克接口
   │      └─ 登录、文件列表、搜索、下载直链、分享解析、转存
   │      └─ 上传：upload/pre 预申请 → update/hash 秒传 → OSS 分片直传 → 合并 → finish
+  ├── UcApi (Dart)     → pc-api.uc.cn/1/clouddrive UC 接口
+  │      └─ Cookie 登录（member）、目录列表（file/sort）、批量直链（file/download）
   ├── Gopeed 内核（Android / Windows）
   │      └─ 本地 REST API (127.0.0.1) 多线程下载 / BT 磁力
   └── iOS URLSession 后台下载器

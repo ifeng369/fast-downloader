@@ -3,6 +3,7 @@ import 'package:flutter_miuix/miuix.dart';
 
 import '../../state/app_state.dart';
 import '../../state/netdisk123_state.dart';
+import '../../state/uc_state.dart';
 import '../../state/xunlei_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/miuix_common.dart';
@@ -10,9 +11,11 @@ import '../../widgets/netdisk_logo.dart';
 import '../../widgets/storage_capacity.dart';
 import '../login/login_page.dart';
 import '../login/netdisk123_login_page.dart';
+import '../login/uc_login_page.dart';
 import '../login/xunlei_login_page.dart';
 import 'drive_page.dart';
 import 'netdisk123_accounts_page.dart';
+import 'uc_drive_page.dart';
 import 'xunlei_drive_page.dart';
 
 class DriveHubPage extends StatelessWidget {
@@ -21,7 +24,8 @@ class DriveHubPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([AppState.I, XunleiState.I, Netdisk123State.I]),
+      listenable: Listenable.merge(
+          [AppState.I, UcState.I, XunleiState.I, Netdisk123State.I]),
       builder: (context, _) {
         final colors = MiuixTheme.of(context).colors;
         return SafeArea(
@@ -40,6 +44,8 @@ class DriveHubPage extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
                     _buildQuarkCard(context),
+                    const SizedBox(height: 14),
+                    _buildUcCard(context),
                     const SizedBox(height: 14),
                     _buildXunleiCard(context),
                     const SizedBox(height: 14),
@@ -86,6 +92,38 @@ class DriveHubPage extends StatelessWidget {
         }
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DrivePage()));
       },
+    );
+  }
+
+  Widget _buildUcCard(BuildContext context) {
+    final uc = UcState.I;
+    final logged = uc.isLoggedIn;
+    final label = uc.user?.label ?? '';
+    return _DriveCard(
+      iconWidget: const NetdiskLogo(
+          provider: NetdiskProvider.uc, size: 52, radius: 14),
+      title: 'UC 网盘',
+      subtitle: logged ? (label.isNotEmpty ? '$label · 已连接' : '已连接') : '未登录，点击登录',
+      statusColor: logged ? AppColors.green : MiuixTheme.of(context).colors.onSurfaceSecondary,
+      onTap: () {
+        if (!logged) {
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => const UcLoginPage()));
+          return;
+        }
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const UcDrivePage()));
+      },
+      onLongPress: logged
+          ? () async {
+              final ok = await confirmMiuix(
+                context,
+                title: '退出 UC 网盘',
+                content: '确定退出登录吗？退出后需要重新粘贴 Cookie。',
+                confirmText: '退出',
+                danger: true,
+              );
+              if (ok == true) await UcState.I.logout();
+            }
+          : null,
     );
   }
 
