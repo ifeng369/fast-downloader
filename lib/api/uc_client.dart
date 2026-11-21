@@ -53,6 +53,21 @@ class UcClient {
 
   String get downloadCookieSnapshot => cookie;
 
+  /// 刷新短期会话 cookie `__puus`。
+  ///
+  /// 实测：任何已登录请求（`/config`、`/member`、`/file/sort`）都会在响应头
+  /// 下发新的 `__puus`（Max-Age=86400，24 小时滑动续期），[mergeSetCookie]
+  /// 已自动并入 [cookie]。这里主动打一次轻量 `/config` 做保活。
+  /// 只有长期凭据 `__pus` 过期才需要用户重新粘贴 Cookie。
+  Future<void> refreshSession() async {
+    if (cookie.isEmpty) return;
+    try {
+      await _request('GET', '$api/config');
+    } catch (_) {
+      // 刷新失败保留旧 Cookie，下次再试
+    }
+  }
+
   /// 登录态失效类错误码（需要重新登录，重试无意义）
   static bool isAuthError(int code) => code == 31001 || code == 401;
 
@@ -201,14 +216,13 @@ class UcClient {
     return files;
   }
 
-  /// 批量获取下载直链。返回 (直链列表, 请求时的 cookie 快照)。
+  /// 批量获取下载直链。返回 (直链列表, 含最新 `__puus` 的 cookie)。
   ///
   /// UC 该接口偶发瞬时 `21001 file not found`（网页端同样带 retry:4），
   /// 这里对非登录类错误重试两次。
   Future<(List<UcDownloadInfo>, String)> getDownloadInfo(
       List<String> fids) async {
-    final snapshot = downloadCookieSnapshot;
-    if (fids.isEmpty) return (<UcDownloadInfo>[], snapshot);
+    if (fids.isEmpty) return (<UcDownloadInfo>[], downloadCookieSnapshot);
     UcException? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
@@ -219,7 +233,8 @@ class UcClient {
             .map((e) => UcDownloadInfo.fromJson(e.cast<String, dynamic>()))
             .where((e) => e.url.isNotEmpty)
             .toList();
-        if (infos.isNotEmpty) return (infos, snapshot);
+        // 响应头里的 Set-Cookie 已并入 cookie，这里取续期后的快照交给下载引擎
+        if (infos.isNotEmpty) return (infos, downloadCookieSnapshot);
         lastError = UcException(-1, '未获取到下载直链（文件可能正在打包）');
       } on UcException catch (e) {
         if (isAuthError(e.code)) rethrow;

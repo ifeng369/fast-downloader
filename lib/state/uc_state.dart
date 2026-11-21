@@ -29,6 +29,7 @@ class UcState extends ChangeNotifier {
   UcUserInfo? user;
   String? loginError;
   bool _ready = false;
+  Timer? _refreshTimer;
 
   UcState._();
 
@@ -47,6 +48,7 @@ class UcState extends ChangeNotifier {
         user = cached;
         notifyListeners();
       }
+      _startRefresher();
       unawaited(refreshUser());
       AppLogger.I.i('uc', '恢复登录态 有Cookie=true');
     } catch (e) {
@@ -91,6 +93,7 @@ class UcState extends ChangeNotifier {
       loginError = null;
       await _saveCookie();
       await _cacheUser(info);
+      _startRefresher();
       notifyListeners();
       AppLogger.I.i('uc', '登录成功 member=${info.memberType}');
       return null;
@@ -106,6 +109,8 @@ class UcState extends ChangeNotifier {
     client.setCookie('');
     user = null;
     loginError = null;
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
     await _clearCookie();
     for (final k in [_kMemberType, _kNickname]) {
       try {
@@ -115,6 +120,21 @@ class UcState extends ChangeNotifier {
     }
     AppLogger.I.i('uc', '已退出登录');
     notifyListeners();
+  }
+
+  // ---------------- 会话保活 ----------------
+
+  /// UC 的短期会话 `__puus` 有效期 24 小时，且任何已登录请求都会滑动续期；
+  /// 每 6 小时打一次轻量 `/config` 并持久化最新 Cookie，避免长时间挂机后被判失效。
+  /// 长期凭据 `__pus` 过期仍需要用户重新粘贴 Cookie。
+  void _startRefresher() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(hours: 6), (_) async {
+      if (!client.hasLogin) return;
+      await client.refreshSession();
+      await _saveCookie();
+      AppLogger.I.i('uc', '会话保活完成');
+    });
   }
 
   // ---------------- 持久化 ----------------
@@ -180,5 +200,11 @@ class UcState extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 }
