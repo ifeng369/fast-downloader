@@ -157,6 +157,11 @@ class XunleiClient {
   String deviceId = '';
   String captchaToken = '';
 
+  /// 网页登录会话使用的网页端 client_id（非空表示当前是网页 token）。
+  /// 网页 token 与 App 的 captcha 签名链不兼容，因此这种会话不发 captcha 头、
+  /// 也不做 captcha 刷新，否则会报 invalid captcha_sign。
+  String webClientId = '';
+
   /// 风控验证：验证链接与人工验证后的密钥（review_panel 流程）
   String reviewUrl = '';
   String creditKey = '';
@@ -209,14 +214,18 @@ class XunleiClient {
       'protocolVersion/301 platformversion/10 sdkVersion/$sdkVersion '
       'Oauth2Client/0.9 (Linux 4_9_337-perf-sn-uotan-gd9d488809c3d) (JAVA 0)';
 
+  bool get isWebSession => webClientId.isNotEmpty;
+
   Map<String, dynamic> _authHeaders() => {
         'user-agent': buildUserAgent(deviceId),
         'accept': 'application/json;charset=UTF-8',
         'x-device-id': deviceId,
-        'x-client-id': clientId,
+        'x-client-id': isWebSession ? webClientId : clientId,
         'x-client-version': clientVersion,
         if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-        if (captchaToken.isNotEmpty) 'X-Captcha-Token': captchaToken,
+        // 网页 token 不接受 App 的 captcha 签名，发了反而报 invalid captcha_sign
+        if (!isWebSession && captchaToken.isNotEmpty)
+          'X-Captcha-Token': captchaToken,
       };
 
   Future<Map<String, dynamic>> _post(
@@ -354,9 +363,10 @@ class XunleiClient {
     }
   }
 
-  /// 校验 token 能否访问云盘（一次最小请求，不依赖 xluser 的 client 绑定）
+  /// 校验 token 能否访问云盘（一次最小请求，不依赖 xluser 的 client 绑定）。
+  /// 用原始 _get：网页会话不能触发 captcha 刷新（会报 invalid captcha_sign）。
   Future<void> probeDrive() async {
-    await _authGet('$_driveBase/files', params: {
+    await _get('$_driveBase/files', params: {
       'parent_id': rootParentId,
       'limit': '1',
       'space': rootSpace,
@@ -425,7 +435,8 @@ class XunleiClient {
         if (err != null) rethrow;
         return _get(url, params: params);
       }
-      if (e.code == 9 &&
+      if (!isWebSession &&
+          e.code == 9 &&
           (e.rawError == 'captcha_invalid' ||
               e.message.contains('验证码') ||
               e.message.contains('captcha'))) {

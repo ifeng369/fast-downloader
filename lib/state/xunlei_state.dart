@@ -58,6 +58,7 @@ class XunleiState extends ChangeNotifier {
       _authClientId = await _read(_kClientId);
       username = await _read(_kUsername);
       // 网页登录的设备 ID 必须原样复用；账号密码登录则按 refresh_token 派生
+      client.webClientId = _authClientId;
       client.setTokens(
           access: access,
           refresh: refresh,
@@ -116,6 +117,7 @@ class XunleiState extends ChangeNotifier {
     }
     username = normalized;
     _authClientId = '';
+    client.webClientId = '';
     await _persist();
     _startRefresher();
     AppLogger.I.i('xunlei', '登录成功 user=${client.userId}');
@@ -135,6 +137,7 @@ class XunleiState extends ChangeNotifier {
     String device = '',
     String webClientId = '',
   }) async {
+    client.webClientId = webClientId;
     client.setTokens(
         access: access, refresh: refresh, user: user, device: device);
     String? err;
@@ -159,7 +162,13 @@ class XunleiState extends ChangeNotifier {
     }
     if (err != null) {
       client.setTokens();
+      client.webClientId = '';
       AppLogger.I.w('xunlei', '网页登录校验失败: $err');
+      // 网页 token 无法满足 App 的 captcha 签名链，给出可操作提示
+      if (err.toLowerCase().contains('captcha') ||
+          err.contains('验证码')) {
+        return '迅雷要求验证码校验，网页登录态无法签名完成，请改用「账号密码登录」';
+      }
       return err;
     }
     username = user.isNotEmpty ? user : username;
@@ -188,6 +197,7 @@ class XunleiState extends ChangeNotifier {
 
   Future<void> logout() async {
     client.setTokens();
+    client.webClientId = '';
     username = null;
     _authClientId = '';
     _totalSize = -1;
