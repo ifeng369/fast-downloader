@@ -1,8 +1,10 @@
 name: Build Android & Windows
 
 on:
+  # 只有推新 tag（v*）才自动构建并发 Release；分支推送不再触发
   push:
-    branches: [main, feat/uc-drive]
+    tags: ['v*']
+  # 手动重跑（重发某个版本的产物用，不会自动触发）
   workflow_dispatch:
     inputs:
       all_abis:
