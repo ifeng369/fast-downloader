@@ -106,36 +106,51 @@ class XunleiState extends ChangeNotifier {
     return null;
   }
 
-  /// PC 网页登录：直接用网页里拿到的 access/refresh_token 恢复登录态
-  Future<String?> loginWithTokens({
+  /// PC 网页登录：用网页里拿到的 token + 网页设备 ID 恢复登录态。
+  ///
+  /// 网页 token 绑定网页端 client（`credentials_<clientId>` 的 clientId），
+  /// 所以先用云盘接口直接校验，失败时再用网页 client_id 续期。
+  Future<String?> loginWithWebTokens({
     required String access,
     required String refresh,
     String user = '',
     String device = '',
+    String webClientId = '',
   }) async {
     client.setTokens(
-      access: access,
-      refresh: refresh,
-      user: user,
-      device: device.isNotEmpty
-          ? device
-          : (refresh.isNotEmpty
-              ? XunleiClient.deviceIdFor(refresh)
-              : XunleiClient.deviceIdFor(access)),
-    );
-    if (refresh.isNotEmpty) {
-      // 用 refresh 校验并续期（网页里拿到的 access 可能已接近过期）
-      final err = await client.refresh();
-      if (err != null) {
-        AppLogger.I.w('xunlei', '网页登录校验失败: $err');
-        return err;
+        access: access, refresh: refresh, user: user, device: device);
+    String? err;
+    try {
+      await client.probeDrive();
+    } catch (e) {
+      err = e.toString();
+    }
+    if (err != null && refresh.isNotEmpty && webClientId.isNotEmpty) {
+      AppLogger.I.w('xunlei', '网页 token 直连云盘失败（$err），用网页 client 续期');
+      final rerr = await client.refreshWith(clientId: webClientId);
+      if (rerr == null) {
+        try {
+          await client.probeDrive();
+          err = null;
+        } catch (e) {
+          err = e.toString();
+        }
+      } else {
+        err = '$err；续期失败: $rerr';
       }
+    }
+    if (err != null) {
+      client.setTokens();
+      AppLogger.I.w('xunlei', '网页登录校验失败: $err');
+      return err;
     }
     username = user.isNotEmpty ? user : username;
     await _persist();
     _startRefresher();
     AppLogger.I.i('xunlei', '网页登录成功 user=${client.userId}');
-    await refreshQuota();
+    try {
+      await refreshQuota();
+    } catch (_) {}
     notifyListeners();
     return null;
   }

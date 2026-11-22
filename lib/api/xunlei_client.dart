@@ -333,6 +333,40 @@ class XunleiClient {
     }
   }
 
+  /// 用额外 client 凭据续期（网页端 token 绑定网页 client，不能用 App 的）
+  Future<String?> refreshWith({required String clientId, String secret = ''}) async {
+    if (refreshToken.isEmpty) return 'refresh_token 缺失，请重新登录';
+    try {
+      final map = await _post('$_authBase/auth/token', {
+        'grant_type': 'refresh_token',
+        'refresh_token': refreshToken,
+        'client_id': clientId,
+        if (secret.isNotEmpty) 'client_secret': secret,
+      });
+      final access = toStr(map['access_token']);
+      if (access.isEmpty) return '续期失败: ${toStr(map['error_description'], fallback: toStr(map['error']))}';
+      accessToken = access;
+      final rt = toStr(map['refresh_token']);
+      if (rt.isNotEmpty) refreshToken = rt;
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// 校验 token 能否访问云盘（一次最小请求，不依赖 xluser 的 client 绑定）
+  Future<void> probeDrive() async {
+    await _authGet('$_driveBase/files', params: {
+      'parent_id': rootParentId,
+      'limit': '1',
+      'space': rootSpace,
+      'filters': jsonEncode({
+        'trashed': {'eq': false},
+      }),
+      'with_audit': true,
+    });
+  }
+
   /// refresh_token 续期，返回 null 表示成功
   Future<String?> refresh() async {
     if (refreshToken.isEmpty) return 'refresh_token 缺失，请重新登录';

@@ -112,13 +112,13 @@ class _WebLoginPageState extends State<WebLoginPage> {
   /// - 迅雷：SSO SDK 把凭据存成 localStorage['credentials_<clientId>'] = {access_token, refresh_token, ...}
   /// - 123：localStorage['authorToken']
   String get _storageScript => _isXunlei
-      ? "(function(){try{var a='',r='',u='';"
+      ? "(function(){try{var a='',r='',u='',c='';"
           "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
           "if(!k||k.indexOf('credentials_')!==0)continue;var v={};"
           "try{v=JSON.parse(localStorage.getItem(k)||'{}')}catch(e){continue}"
           "if(v&&v.access_token){a=String(v.access_token);r=String(v.refresh_token||'');"
-          "u=String(v.user_id||v.sub||'')}}"
-          "return JSON.stringify({access:a,refresh:r,user:u})}catch(e){return '{}'}})()"
+          "u=String(v.user_id||v.sub||'');c=k.substr(12).split('@')[0]}}"
+          "return JSON.stringify({access:a,refresh:r,user:u,client:c})}catch(e){return '{}'}})()"
       : "(function(){try{var t='';"
           "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
           "if(k&&k.toLowerCase()==='authortoken')t=String(localStorage.getItem(k)||'')}"
@@ -359,11 +359,12 @@ class _WebLoginPageState extends State<WebLoginPage> {
           return;
         }
         final device = _cookieValue(await _readCookieHeader(), 'deviceid');
-        err = await XunleiState.I.loginWithTokens(
+        err = await XunleiState.I.loginWithWebTokens(
           access: access,
           refresh: refresh,
           user: user,
           device: device,
+          webClientId: (map['client'] ?? '').toString(),
         );
       } else {
         final raw = credential ?? await _readStorage();
