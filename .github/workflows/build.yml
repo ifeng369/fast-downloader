@@ -278,7 +278,7 @@ jobs:
           else
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Quarklite $TAG" \
+              --title "fast-downloader $TAG" \
               --generate-notes \
               --target "$GITHUB_SHA" \
               release/android/* release/*.zip
