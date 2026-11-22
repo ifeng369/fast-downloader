@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../state/xunlei_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/miuix_common.dart';
+import 'web_login_page.dart';
 import 'xunlei_review_page.dart';
 
 /// 迅雷云盘账号密码登录页（含风控短信验证流程）
@@ -137,6 +138,15 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
     MiuixToast.show(msg);
   }
 
+  Future<void> _openWebLogin() async {
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const WebLoginPage(provider: WebLoginProvider.xunlei),
+      ),
+    );
+    if (ok == true && mounted) Navigator.of(context).pop(true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = MiuixTheme.of(context).colors;
@@ -213,6 +223,17 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
                           )),
                     )
                   : MiuixText('登录', color: Colors.white, fontSize: 15),
+            ),
+            const SizedBox(height: 14),
+            MiuixTextButton(
+              '在应用内打开迅雷网页登录（自动获取）',
+              onPressed: _openWebLogin,
+              colors: MiuixButtonColors(
+                color: colors.primary,
+                disabledColor: colors.primary,
+                contentColor: colors.primary,
+                disabledContentColor: colors.primary,
+              ),
             ),
             const SizedBox(height: 14),
             MiuixText(

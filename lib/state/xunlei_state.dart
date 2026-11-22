@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/xunlei_client.dart';
+import '../core/web_cookies.dart';
 import '../utils/app_logger.dart';
 
 /// 迅雷云盘登录态管理（token 持久化 + refresh 续期）
@@ -105,6 +106,40 @@ class XunleiState extends ChangeNotifier {
     return null;
   }
 
+  /// PC 网页登录：直接用网页里拿到的 access/refresh_token 恢复登录态
+  Future<String?> loginWithTokens({
+    required String access,
+    required String refresh,
+    String user = '',
+    String device = '',
+  }) async {
+    client.setTokens(
+      access: access,
+      refresh: refresh,
+      user: user,
+      device: device.isNotEmpty
+          ? device
+          : (refresh.isNotEmpty
+              ? XunleiClient.deviceIdFor(refresh)
+              : XunleiClient.deviceIdFor(access)),
+    );
+    if (refresh.isNotEmpty) {
+      // 用 refresh 校验并续期（网页里拿到的 access 可能已接近过期）
+      final err = await client.refresh();
+      if (err != null) {
+        AppLogger.I.w('xunlei', '网页登录校验失败: $err');
+        return err;
+      }
+    }
+    username = user.isNotEmpty ? user : username;
+    await _persist();
+    _startRefresher();
+    AppLogger.I.i('xunlei', '网页登录成功 user=${client.userId}');
+    await refreshQuota();
+    notifyListeners();
+    return null;
+  }
+
   /// 风控验证完成后，用新的 creditkey 重试登录
   Future<String?> loginWithCreditKey(
       String account, String password, String key) async {
@@ -133,6 +168,7 @@ class XunleiState extends ChangeNotifier {
         await prefs.remove(k);
       } catch (_) {}
     }
+    await WebCookies.clear();
     AppLogger.I.i('xunlei', '已退出登录');
     notifyListeners();
   }

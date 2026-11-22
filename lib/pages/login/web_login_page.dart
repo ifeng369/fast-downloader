@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,10 +10,17 @@ import 'package:webview_flutter_windows/webview_flutter_windows.dart';
 
 import '../../api/quark_client.dart';
 import '../../api/uc_client.dart';
+import '../../core/web_cookies.dart';
 import '../../state/app_state.dart';
+import '../../state/netdisk123_state.dart';
 import '../../state/uc_state.dart';
+import '../../state/xunlei_state.dart';
 
-enum WebLoginProvider { quark, uc }
+enum WebLoginProvider { quark, uc, xunlei, netdisk123 }
+
+const _desktopUa =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 /// 应用内打开网盘 PC 登录页，登录成功后自动读取 Cookie 并校验、保存。
 ///
@@ -44,22 +52,75 @@ class _WebLoginPageState extends State<WebLoginPage> {
   static const double _zoomStep = 0.2;
 
   bool get _isUc => widget.provider == WebLoginProvider.uc;
+  bool get _isXunlei => widget.provider == WebLoginProvider.xunlei;
+  bool get _isPan123 => widget.provider == WebLoginProvider.netdisk123;
 
-  String get _title => _isUc ? '登录 UC 网盘' : '登录夸克网盘';
+  /// 夸克/UC 走 cookie；迅雷/123 的网页登录态是 localStorage 里的 token
+  bool get _useCookie => !_isXunlei && !_isPan123;
 
-  String get _ua => _isUc ? UcClient.uaPc : QuarkClient.uaPc;
+  String get _title => switch (widget.provider) {
+        WebLoginProvider.quark => '登录夸克网盘',
+        WebLoginProvider.uc => '登录 UC 网盘',
+        WebLoginProvider.xunlei => '登录迅雷云盘',
+        WebLoginProvider.netdisk123 => '登录 123 网盘',
+      };
 
-  String get _loginUrl =>
-      _isUc ? 'https://drive.uc.cn/' : 'https://pan.quark.cn/';
+  String get _ua => switch (widget.provider) {
+        WebLoginProvider.quark => QuarkClient.uaPc,
+        WebLoginProvider.uc => UcClient.uaPc,
+        WebLoginProvider.xunlei => _desktopUa,
+        WebLoginProvider.netdisk123 => _desktopUa,
+      };
 
-  /// 登录态 cookie 名（两家都是 Alibaba 系，均用 __pus）
+  String get _loginUrl => switch (widget.provider) {
+        WebLoginProvider.quark => 'https://pan.quark.cn/',
+        WebLoginProvider.uc => 'https://drive.uc.cn/',
+        WebLoginProvider.xunlei => 'https://pan.xunlei.com/login/',
+        WebLoginProvider.netdisk123 => 'https://www.123pan.com/',
+      };
+
+  /// 登录态 cookie 名（夸克/UC 都是 Alibaba 系，均用 __pus）
   String get _sessionCookie => '__pus';
 
-  List<String> get _cookieHosts => _isUc
-      ? ['https://drive.uc.cn', 'https://pc-api.uc.cn']
-      : ['https://pan.quark.cn', 'https://drive.quark.cn', 'https://pc-api.quark.cn'];
+  List<String> get _cookieHosts => switch (widget.provider) {
+        WebLoginProvider.uc => ['https://drive.uc.cn', 'https://pc-api.uc.cn'],
+        WebLoginProvider.quark => [
+            'https://pan.quark.cn',
+            'https://drive.quark.cn',
+            'https://pc-api.quark.cn'
+          ],
+        WebLoginProvider.xunlei => [
+            'https://pan.xunlei.com',
+            'https://xluser-ssl.xunlei.com'
+          ],
+        WebLoginProvider.netdisk123 => [
+            'https://www.123pan.com',
+            'https://api.123278.com'
+          ],
+      };
 
-  List<String> get _domainSuffixes => _isUc ? ['uc.cn'] : ['quark.cn'];
+  List<String> get _domainSuffixes => switch (widget.provider) {
+        WebLoginProvider.uc => ['uc.cn'],
+        WebLoginProvider.quark => ['quark.cn'],
+        WebLoginProvider.xunlei => ['xunlei.com'],
+        WebLoginProvider.netdisk123 => ['123pan.com', '123278.com'],
+      };
+
+  /// 在页面里读 token：
+  /// - 迅雷：SSO SDK 把凭据存成 localStorage['credentials_<clientId>'] = {access_token, refresh_token, ...}
+  /// - 123：localStorage['authorToken']
+  String get _storageScript => _isXunlei
+      ? "(function(){try{var a='',r='',u='';"
+          "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
+          "if(!k||k.indexOf('credentials_')!==0)continue;var v={};"
+          "try{v=JSON.parse(localStorage.getItem(k)||'{}')}catch(e){continue}"
+          "if(v&&v.access_token){a=String(v.access_token);r=String(v.refresh_token||'');"
+          "u=String(v.user_id||v.sub||'')}}"
+          "return JSON.stringify({access:a,refresh:r,user:u})}catch(e){return '{}'}})()"
+      : "(function(){try{var t='';"
+          "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
+          "if(k&&k.toLowerCase()==='authortoken')t=String(localStorage.getItem(k)||'')}"
+          "return JSON.stringify({token:t})}catch(e){return '{}'}})()";
 
   @override
   void initState() {
@@ -70,7 +131,11 @@ class _WebLoginPageState extends State<WebLoginPage> {
   @override
   void dispose() {
     _poll?.cancel();
-    _winController?.dispose();
+    // Windows：把 controller 交给 WebCookies 持有，退出登录时用它清 cookie
+    final win = _winController;
+    if (win != null) {
+      WebCookies.retain(win);
+    }
     super.dispose();
   }
 
@@ -162,6 +227,43 @@ class _WebLoginPageState extends State<WebLoginPage> {
     setState(() => _status = msg);
   }
 
+  /// 在页面里读 token（迅雷/123），返回页面脚本给出的 JSON 字符串
+  Future<String> _readStorage() async {
+    if (_useCookie) return '';
+    try {
+      if (!kIsWeb && Platform.isWindows) {
+        final value = await _winController?.executeScript(_storageScript);
+        return _unwrap(value);
+      }
+      final value =
+          await _androidController?.runJavaScriptReturningResult(_storageScript);
+      return _unwrap(value);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Android 的 runJavaScriptReturningResult 可能把字符串再包一层引号
+  String _unwrap(Object? raw) {
+    var text = raw?.toString() ?? '';
+    if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+      try {
+        text = jsonDecode(text) as String;
+      } catch (_) {}
+    }
+    return text;
+  }
+
+  Map<String, dynamic> _decode(String raw) {
+    if (raw.isEmpty) return const {};
+    try {
+      final value = jsonDecode(raw);
+      return value is Map ? value.cast<String, dynamic>() : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
   /// 读取并拼接 Cookie 请求头（只保留目标网盘域名下的 cookie）
   Future<String> _readCookieHeader() async {
     final byName = <String, String>{};
@@ -193,42 +295,85 @@ class _WebLoginPageState extends State<WebLoginPage> {
 
   Future<void> _checkLogin() async {
     if (_done || _submitting) return;
-    String header;
     try {
-      header = await _readCookieHeader();
-    } catch (_) {
-      return;
-    }
-    if (!header.contains('$_sessionCookie=')) return;
-    if (header == _lastTried) return; // cookie 没变就不重复校验
-    _lastTried = header;
-    await _submit(header);
+      if (_useCookie) {
+        final header = await _readCookieHeader();
+        if (!header.contains('$_sessionCookie=')) return;
+        if (header == _lastTried) return; // cookie 没变就不重复校验
+        _lastTried = header;
+        await _submit(header);
+      } else {
+        final storage = await _readStorage();
+        if (storage.isEmpty || storage == '{}' || storage == _lastTried) return;
+        _lastTried = storage;
+        await _submit(storage);
+      }
+    } catch (_) {}
   }
 
-  Future<void> _submit([String? header]) async {
+  Future<void> _submit([String? credential]) async {
     if (_submitting || _done) return;
     setState(() => _submitting = true);
     try {
-      final cookie = header ?? await _readCookieHeader();
-      if (cookie.isEmpty) {
-        _setStatus('还没有读到 Cookie，请先在页面里完成登录');
-        return;
+      String? err;
+      if (_useCookie) {
+        final cookie = credential ?? await _readCookieHeader();
+        if (cookie.isEmpty) {
+          _setStatus('还没有读到 Cookie，请先在页面里完成登录');
+          return;
+        }
+        err = _isUc
+            ? await UcState.I.login(cookie)
+            : await AppState.I.login(cookie);
+      } else if (_isXunlei) {
+        final raw = credential ?? await _readStorage();
+        final map = _decode(raw);
+        final access = (map['access'] ?? '').toString();
+        final refresh = (map['refresh'] ?? '').toString();
+        final user = (map['user'] ?? '').toString();
+        if (access.isEmpty) {
+          _setStatus('还没有读到迅雷登录凭据，请先在页面里完成登录');
+          return;
+        }
+        final device = _cookieValue(await _readCookieHeader(), 'deviceid');
+        err = await XunleiState.I.loginWithTokens(
+          access: access,
+          refresh: refresh,
+          user: user,
+          device: device,
+        );
+      } else {
+        final raw = credential ?? await _readStorage();
+        final token = (_decode(raw)['token'] ?? '').toString();
+        if (token.isEmpty) {
+          _setStatus('还没有读到 123 网盘登录凭据，请先在页面里完成登录');
+          return;
+        }
+        err = await Netdisk123State.I.loginByWebToken(token);
       }
-      final err = _isUc
-          ? await UcState.I.login(cookie)
-          : await AppState.I.login(cookie);
       if (err == null) {
         _done = true;
         _poll?.cancel();
         if (mounted) Navigator.of(context).maybePop(true);
         return;
       }
-      _setStatus('已读取 Cookie，但校验失败：$err');
+      _setStatus('已读取登录凭据，但校验失败：$err');
     } catch (e) {
-      _setStatus('读取 Cookie 失败：$e');
+      _setStatus('读取登录凭据失败：$e');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  static String _cookieValue(String header, String name) {
+    for (final part in header.split(';')) {
+      final idx = part.indexOf('=');
+      if (idx <= 0) continue;
+      if (part.substring(0, idx).trim() == name) {
+        return part.substring(idx + 1).trim();
+      }
+    }
+    return '';
   }
 
   @override

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/uc_client.dart';
 import '../api/uc_models.dart';
+import '../core/web_cookies.dart';
 import '../utils/app_logger.dart';
 
 /// UC 网盘登录态管理（Cookie 持久化 + 启动校验）。
@@ -119,6 +120,7 @@ class UcState extends ChangeNotifier {
       } catch (_) {}
     }
     AppLogger.I.i('uc', '已退出登录');
+    await WebCookies.clear();
     notifyListeners();
   }
 

@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/quark_client.dart';
 import '../api/quark_models.dart';
 import '../core/gopeed/gopeed_boot.dart';
+import '../core/web_cookies.dart';
 
 class AppState extends ChangeNotifier {
   static const _sysChannel = MethodChannel('quarklite.com/system');
@@ -216,6 +217,7 @@ class AppState extends ChangeNotifier {
     quark.setCookie('');
     user = null;
     await _clearCookie();
+    await WebCookies.clear();
     notifyListeners();
   }
 

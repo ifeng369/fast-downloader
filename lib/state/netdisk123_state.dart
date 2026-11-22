@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/netdisk123_client.dart';
+import '../core/web_cookies.dart';
 import '../utils/app_logger.dart';
 
 /// 单个 123 网盘账号
@@ -315,6 +316,23 @@ class Netdisk123State extends ChangeNotifier {
     await removeAccount(a.id);
   }
 
+  /// PC 网页登录：校验网页里拿到的 token 后写入登录态
+  Future<String?> loginByWebToken(String token) async {
+    final value = token.trim();
+    if (value.isEmpty) return '网页里没有读到登录凭据';
+    client.setToken(value);
+    bool ok;
+    try {
+      ok = await client.validate();
+    } catch (e) {
+      return '校验失败: $e';
+    }
+    if (!ok) return 'token 无效或已过期';
+    await loginByToken(value);
+    AppLogger.I.i('netdisk123', '网页登录成功');
+    return null;
+  }
+
   /// 退出全部
   Future<void> logout() async {
     client.clear();
@@ -329,6 +347,7 @@ class Netdisk123State extends ChangeNotifier {
         await prefs.remove(k);
       } catch (_) {}
     }
+    await WebCookies.clear();
     AppLogger.I.i('netdisk123', '已退出全部登录');
     notifyListeners();
   }

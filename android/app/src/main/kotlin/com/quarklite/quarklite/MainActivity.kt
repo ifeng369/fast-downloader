@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import android.webkit.CookieManager
+import android.webkit.WebStorage
 import androidx.annotation.NonNull
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
@@ -88,6 +89,16 @@ open class MainActivity : FlutterActivity() {
                         val url = call.argument<String>("url") ?: ""
                         try {
                             result.success(CookieManager.getInstance().getCookie(url))
+                        } catch (e: Exception) {
+                            result.error("ERROR", e.message, null)
+                        }
+                    }
+                    "clearCookies" -> {
+                        try {
+                            CookieManager.getInstance().removeAllCookies(null)
+                            CookieManager.getInstance().flush()
+                            WebStorage.getInstance().deleteAllData()
+                            result.success(null)
                         } catch (e: Exception) {
                             result.error("ERROR", e.message, null)
                         }

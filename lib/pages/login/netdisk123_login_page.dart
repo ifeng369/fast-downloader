@@ -8,6 +8,7 @@ import '../../api/netdisk123_client.dart';
 import '../../state/netdisk123_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/miuix_common.dart';
+import 'web_login_page.dart';
 
 /// 123 网盘登录页（密码登录 + 扫码登录 Tab 切换）
 class Netdisk123LoginPage extends StatefulWidget {
@@ -41,7 +42,7 @@ class _Netdisk123LoginPageState extends State<Netdisk123LoginPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: MiuixTabRow(
-                tabs: const ['密码登录', '扫码登录'],
+                tabs: const ['密码登录', '扫码登录', '网页登录'],
                 selectedTabIndex: _tabIndex,
                 onTabSelected: (i) => setState(() => _tabIndex = i),
               ),
@@ -52,6 +53,7 @@ class _Netdisk123LoginPageState extends State<Netdisk123LoginPage> {
                 children: const [
                   _PasswordLoginView(),
                   _QrLoginView(),
+                  _WebLoginView(),
                 ],
               ),
             ),
