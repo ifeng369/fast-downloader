@@ -9,8 +9,10 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import androidx.annotation.NonNull
 import androidx.core.app.NotificationCompat
+import androidx.core.content.FileProvider
 import com.gopeed.libgopeed.Libgopeed
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -63,6 +65,14 @@ open class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "canWriteDownload" -> result.success(canWriteDownload())
+                    "installApk" -> {
+                        val path = call.argument<String>("path") ?: ""
+                        try {
+                            result.success(installApk(path))
+                        } catch (e: Exception) {
+                            result.error("ERROR", e.message, null)
+                        }
+                    }
                     "openAllFilesAccess" -> {
                         openAllFilesAccess()
                         result.success(null)
@@ -257,6 +267,29 @@ open class MainActivity : FlutterActivity() {
             "promotable" to promotable,
             "reason" to promoteReason,
         )
+    }
+
+    /// 用系统安装器打开 APK；未授予「安装未知应用」时跳转授权页并返回 needPermission
+    private fun installApk(path: String): String {
+        val file = File(path)
+        if (!file.exists()) return "文件不存在: $path"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                    .setData(Uri.parse("package:$packageName"))
+            )
+            return "needPermission"
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        startActivity(
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        )
+        return "started"
     }
 
     private fun canWriteDownload(): Boolean {

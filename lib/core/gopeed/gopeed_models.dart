@@ -59,6 +59,9 @@ class GopeedTask {
   final int speed;
   final int createdAt;
 
+  /// 下载文件的绝对路径（来自 Gopeed meta.opts.path + name；未知时为空）
+  final String filePath;
+
   GopeedTask({
     required this.id,
     required this.name,
@@ -67,6 +70,7 @@ class GopeedTask {
     required this.downloaded,
     required this.speed,
     required this.createdAt,
+    this.filePath = '',
   });
 
   double get progress =>
@@ -74,9 +78,14 @@ class GopeedTask {
 
   factory GopeedTask.fromJson(Map<String, dynamic> json) {
     final progress = json['progress'] as Map<String, dynamic>? ?? const {};
-    final res = (json['meta'] as Map<String, dynamic>?)?['res']
-            as Map<String, dynamic>? ??
-        const {};
+    final meta = json['meta'] as Map<String, dynamic>? ?? const {};
+    final res = meta['res'] as Map<String, dynamic>? ?? const {};
+    final opts = meta['opts'] as Map<String, dynamic>? ?? const {};
+    final dir = opts['path']?.toString() ?? '';
+    final optName = opts['name']?.toString() ?? '';
+    final filePath = dir.isEmpty
+        ? ''
+        : (optName.isEmpty ? dir : '$dir/$optName');
     return GopeedTask(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
@@ -85,6 +94,7 @@ class GopeedTask {
       downloaded: toInt(progress['downloaded']),
       speed: toInt(progress['speed']),
       createdAt: toInt(json['createdAt']),
+      filePath: filePath,
     );
   }
 }

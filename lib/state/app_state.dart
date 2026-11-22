@@ -427,6 +427,17 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// 用系统安装器安装 APK（仅 Android）。
+  /// 返回 `started` / `needPermission`（已跳转「安装未知应用」授权页）/ 错误描述。
+  Future<String?> installApk(String path) async {
+    if (kIsWeb || !Platform.isAndroid) return '仅 Android 支持直接安装 APK';
+    try {
+      return await _sysChannel.invokeMethod<String>('installApk', {'path': path});
+    } catch (e) {
+      return '调用失败: $e';
+    }
+  }
+
   @override
   void dispose() {
     quark.dispose();

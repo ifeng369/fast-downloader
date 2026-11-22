@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 下载目录可能位于外部存储任意位置（MANAGE_EXTERNAL_STORAGE），全部放开只读共享 -->
+    <external-path name="external" path="." />
+    <root-path name="root" path="." />
+    <files-path name="files" path="." />
+    <cache-path name="cache" path="." />
+</paths>

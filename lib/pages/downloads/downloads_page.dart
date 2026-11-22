@@ -1,8 +1,12 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import '../../core/gopeed/gopeed_boot.dart';
 import '../../core/gopeed/gopeed_models.dart';
+import '../../state/app_state.dart';
 import '../../state/download_manager.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
@@ -470,7 +474,10 @@ class _DownloadsPageState extends State<DownloadsPage>
     final done = task.status == GopeedStatus.done;
     final failed = task.status == GopeedStatus.error;
     final paused = task.status == GopeedStatus.pause;
+    final isApk = done && task.name.toLowerCase().endsWith('.apk');
     final actions = <({IconData icon, String text, String value, Color? color})>[
+      if (isApk)
+        (icon: Icons.android_rounded, text: '安装 APK', value: 'install', color: null),
       if (!done && !failed && !paused)
         (icon: Icons.pause_rounded, text: '暂停', value: 'pause', color: null),
       if (paused)
@@ -482,6 +489,8 @@ class _DownloadsPageState extends State<DownloadsPage>
         .then((v) async {
       if (v == null) return;
       switch (v) {
+        case 'install':
+          await _installApk(task);
         case 'pause':
           await DownloadManager.I.pauseTask(task);
         case 'resume':
@@ -492,6 +501,28 @@ class _DownloadsPageState extends State<DownloadsPage>
           await _confirmDelete(task, deleteFile: true);
       }
     });
+  }
+
+  /// 已完成的 APK 交给系统安装器；首次会跳转「安装未知应用」授权页
+  Future<void> _installApk(GopeedTask task) async {
+    if (kIsWeb || !Platform.isAndroid) {
+      _toast('仅 Android 支持直接安装 APK');
+      return;
+    }
+    final path = task.filePath;
+    if (path.isEmpty) {
+      _toast('找不到文件路径，请到下载目录手动安装');
+      return;
+    }
+    final r = await AppState.I.installApk(path);
+    switch (r) {
+      case 'started':
+        _toast('已交给系统安装器');
+      case 'needPermission':
+        _toast('请允许「安装未知应用」，返回后再次点击「安装 APK」');
+      default:
+        _toast('安装失败: ${r ?? '未知错误'}');
+    }
   }
 
   String _subtitle(GopeedTask task) {
