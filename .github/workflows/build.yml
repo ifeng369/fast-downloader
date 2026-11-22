@@ -54,26 +54,16 @@ jobs:
         env:
           GOPEED_VERSION: ${{ vars.GOPEED_VERSION || 'v1.9.3' }}
 
-      - name: Cache keystore
-        uses: actions/cache@v4
-        with:
-          path: android/app/upload-keystore.jks
-          key: keystore-${{ github.repository }}
-
-      - name: Keystore + key.properties
+      - name: Write key.properties（固定签名证书已入库）
         shell: bash
         run: |
-          mkdir -p android/app
-          if [ ! -f android/app/upload-keystore.jks ]; then
-            keytool -genkeypair -v \
-              -keystore android/app/upload-keystore.jks \
-              -alias quarklite -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass quarklite2026 -keypass quarklite2026 \
-              -dname "CN=QuarkLite, OU=Dev, O=QuarkLite, L=Beijing, S=Beijing, C=CN"
-          fi
-          # 每次都写，避免 keystore 命中缓存时退回 debug 签名（签名不一致会导致无法覆盖安装）
+          test -f android/app/upload-keystore.p12 || {
+            echo "::error::缺少 android/app/upload-keystore.p12，签名无法固定"
+            exit 1
+          }
           printf '%s\n' \
-            "storeFile=upload-keystore.jks" \
+            "storeFile=upload-keystore.p12" \
+            "storeType=PKCS12" \
             "storePassword=quarklite2026" \
             "keyAlias=quarklite" \
             "keyPassword=quarklite2026" > android/key.properties
@@ -83,6 +73,19 @@ jobs:
           flutter pub get
           flutter build apk --release
           flutter build apk --release --split-per-abi
+
+      - name: 校验签名证书
+        shell: bash
+        run: |
+          set -euo pipefail
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          OUT=$("$BT/apksigner" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)
+          echo "$OUT"
+          EXPECT="eaa2a2d962c8753d3e05f892c0382f8a4418445ed40f4328c3659bf6b9ba452c"
+          if ! echo "$OUT" | grep -qi "$EXPECT"; then
+            echo "::error::签名证书与仓库内 keystore 不一致（期望 $EXPECT），产物将无法覆盖安装旧版本"
+            exit 1
+          fi
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4

@@ -39,6 +39,8 @@ android {
                 keyPassword = keystoreProperties["keyPassword"] as String
                 storeFile = file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
+                // 仓库内固定签名是 PKCS12；未显式指定时按传统 JKS 处理
+                storeType = (keystoreProperties["storeType"] as String?) ?: "JKS"
             }
         }
     }
