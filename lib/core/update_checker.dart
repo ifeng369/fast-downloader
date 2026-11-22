@@ -57,6 +57,11 @@ class UpdateChecker {
 
   static final Uri _latestJsonUrl =
       Uri.parse('https://github.com/$repo/releases/latest/download/latest.json');
+  /// 代理地址：https://gh.ifeng369.top/<原始 URL>
+  static Uri proxyUrl(Uri url) => Uri.parse('$proxyPrefix${url.toString()}');
+
+  static final Uri _latestJsonUrl =
+      Uri.parse('https://github.com/$repo/releases/latest/download/latest.json');
 
   /// 最近一次检查失败的原因（手动检查时展示，避免把失败伪装成“已是最新”）
   static String? lastError;
