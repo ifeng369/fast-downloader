@@ -217,16 +217,133 @@ class UcClient {
   }
 
   /// 批量获取下载直链。返回 (直链列表, 含最新 `__puus` 的 cookie)。
-  ///
-  /// UC 该接口偶发瞬时 `21001 file not found`（网页端同样带 retry:4），
-  /// 这里对非登录类错误重试两次。
   Future<(List<UcDownloadInfo>, String)> getDownloadInfo(
       List<String> fids) async {
     if (fids.isEmpty) return (<UcDownloadInfo>[], downloadCookieSnapshot);
+    return _downloadWithRetry({
+      'fids': fids,
+      'pwd_id': '',
+      'stoken': '',
+      'fids_token': List<String>.filled(fids.length, ''),
+    });
+  }
+
+  // ---------------- 分享 ----------------
+
+  static final _shareUrlRe =
+      RegExp(r'(?:drive|fast)\.uc\.cn/s/([0-9A-Za-z]+)', caseSensitive: false);
+  static final _pwdQueryRe = RegExp(
+      r'[?&#](?:pwd|passcode|password|code)=([0-9A-Za-z_-]{2,12})',
+      caseSensitive: false);
+  static final _pwdCnRe = RegExp(
+      r'(?:提取码|提取碼|访问码|訪問碼|密码|密碼|口令)\s*[:：=]?\s*([0-9A-Za-z_-]{2,12})');
+
+  /// 从分享链接/文本里取 (pwdId, passcode)。
+  /// 支持 `?pwd=xxxx`、「提取码:xxxx」以及纯 pwd_id（8 位以上字母数字）。
+  static ({String pwdId, String passcode}) parseShareUrl(String text) {
+    final t = text.trim();
+    var pwdId = _shareUrlRe.firstMatch(t)?.group(1) ?? '';
+    if (pwdId.isEmpty && RegExp(r'^[0-9A-Za-z]{8,}$').hasMatch(t)) {
+      pwdId = t;
+    }
+    var passcode = '';
+    for (final re in [_pwdQueryRe, _pwdCnRe]) {
+      final m = re.firstMatch(t);
+      if (m != null) {
+        passcode = m.group(1) ?? '';
+        break;
+      }
+    }
+    return (pwdId: pwdId, passcode: passcode);
+  }
+
+  /// 分享令牌（游客/登录都可用；登录态直链速度更快）
+  Future<UcShareSession> getShareToken(String pwdId, String passcode) async {
+    try {
+      final data = await _post('$api/share/sharepage/token',
+          data: {'pwd_id': pwdId, 'passcode': passcode});
+      final stoken = data is Map ? (data['stoken']?.toString() ?? '') : '';
+      if (stoken.isEmpty) throw UcException(-1, '取不到分享令牌');
+      return UcShareSession(
+          pwdId: pwdId, passcode: passcode, stoken: stoken);
+    } on UcException catch (e) {
+      throw UcException(e.code, _shareMessage(e));
+    }
+  }
+
+  /// 列出分享内的目录内容（自动翻页）
+  Future<List<UcShareFile>> listShare(UcShareSession session,
+      String pdirFid) async {
+    final files = <UcShareFile>[];
+    var page = 1;
+    var total = -1;
+    const size = 100;
+    while (total < 0 || files.length < total) {
+      final resp =
+          await _request('GET', '$api/share/sharepage/detail', params: {
+        'pwd_id': session.pwdId,
+        'stoken': session.stoken,
+        'pdir_fid': pdirFid,
+        'force': 0,
+        '_page': page,
+        '_size': size,
+        '_fetch_banner': 1,
+        '_fetch_share': 1,
+        '_fetch_total': 1,
+        '_sort': 'file_type:asc,updated_at:desc',
+      });
+      final body = _parseBody(resp);
+      final data = _check(body);
+      if (data is! Map) break;
+      final list = data['list'];
+      if (list is! List) break;
+      files.addAll(list
+          .whereType<Map>()
+          .map((e) => UcShareFile.fromJson(e.cast<String, dynamic>())));
+      final meta = body['metadata'];
+      total = meta is Map ? toInt(meta['_total'], fallback: -1) : -1;
+      if (list.isEmpty) break;
+      if (total < 0 && list.length < size) break;
+      page++;
+      if (page > 500) break;
+    }
+    return files;
+  }
+
+  /// 取分享文件的直链（**无需转存**，与网页端"直接下载"同一路径）。
+  /// 需要把每个文件的 [UcShareFile.fidToken] 一并回传。
+  Future<(List<UcDownloadInfo>, String)> getShareDownloadInfo(
+      UcShareSession session, List<UcShareFile> files) async {
+    if (files.isEmpty) return (<UcDownloadInfo>[], downloadCookieSnapshot);
+    return _downloadWithRetry({
+      'fids': files.map((e) => e.fid).toList(),
+      'pwd_id': session.pwdId,
+      'stoken': session.stoken,
+      'fids_token': files.map((e) => e.fidToken).toList(),
+    });
+  }
+
+  static String _shareMessage(UcException e) {
+    switch (e.code) {
+      case 41008:
+        return '这个分享需要提取码，请在「提取码」里填上';
+      case 41007:
+        return '提取码不对，改一下再试';
+      case 41006:
+        return '分享不存在或已经失效';
+      default:
+        return e.message;
+    }
+  }
+
+  /// 统一的直链请求：UC 该接口偶发瞬时 `21001 file not found`
+  /// （网页端同样带 retry:4），对非登录类错误重试两次。
+  Future<(List<UcDownloadInfo>, String)> _downloadWithRetry(
+      Map<String, dynamic> body) async {
     UcException? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        final data = await _post('$api/file/download', data: {'fids': fids});
+        final data = await _post('$api/file/download', data: body);
         final raw = data is List ? data : (data is Map ? [data] : const []);
         final infos = raw
             .whereType<Map>()

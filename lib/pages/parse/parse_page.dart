@@ -4,8 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../api/netdisk123_client.dart';
 import '../../api/quark_client.dart';
+import '../../api/uc_client.dart';
 import '../../state/app_state.dart';
+import '../../state/download_manager.dart';
 import '../../state/download_service.dart';
+import '../../state/uc_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/file_list_anim.dart';
 import '../../widgets/miuix_common.dart';
@@ -13,8 +16,9 @@ import '../drive/netdisk123_accounts_page.dart';
 import '../drive/xunlei_drive_page.dart';
 import 'netdisk123_share_page.dart';
 import 'share_files_page.dart';
+import 'uc_share_page.dart';
 
-enum ShareType { quark, netdisk123, xunlei, magnet, unknown }
+enum ShareType { quark, uc, netdisk123, xunlei, magnet, unknown }
 
 class ParsePage extends StatefulWidget {
   const ParsePage({super.key});
@@ -52,6 +56,9 @@ class _ParsePageState extends State<ParsePage> {
   ShareType _detectType(String s) {
     final v = s.trim().toLowerCase();
     if (v.startsWith('magnet:')) return ShareType.magnet;
+    if (v.contains('drive.uc.cn/s/') || v.contains('fast.uc.cn/s/')) {
+      return ShareType.uc;
+    }
     if (v.contains('quark.cn') || v.contains('pan.quark')) return ShareType.quark;
     if (v.contains('123pan') || v.contains('123865') || v.contains('123912') || v.contains('123684') || v.contains('www.123pan.com')) return ShareType.netdisk123;
     if (v.contains('xunlei') || v.contains('pan.xunlei')) return ShareType.xunlei;
@@ -59,8 +66,8 @@ class _ParsePageState extends State<ParsePage> {
     if (v.startsWith('http')) return ShareType.quark;
     return ShareType.unknown;
   }
-  String _typeLabel(ShareType t) { switch(t){ case ShareType.quark: return '夸克分享'; case ShareType.netdisk123: return '123 网盘'; case ShareType.xunlei: return '迅雷分享'; case ShareType.magnet: return '磁力/BT'; case ShareType.unknown: return '自动识别'; } }
-  IconData _typeIcon(ShareType t) { switch(t){ case ShareType.quark: return Icons.cloud_rounded; case ShareType.netdisk123: return Icons.cloud_upload_rounded; case ShareType.xunlei: return Icons.bolt_rounded; case ShareType.magnet: return Icons.wifi_tethering_rounded; case ShareType.unknown: return Icons.search_rounded; } }
+  String _typeLabel(ShareType t) { switch(t){ case ShareType.quark: return '夸克分享'; case ShareType.uc: return 'UC 分享'; case ShareType.netdisk123: return '123 网盘'; case ShareType.xunlei: return '迅雷分享'; case ShareType.magnet: return '磁力/BT'; case ShareType.unknown: return '自动识别'; } }
+  IconData _typeIcon(ShareType t) { switch(t){ case ShareType.quark: return Icons.cloud_rounded; case ShareType.uc: return Icons.cloud_done_rounded; case ShareType.netdisk123: return Icons.cloud_upload_rounded; case ShareType.xunlei: return Icons.bolt_rounded; case ShareType.magnet: return Icons.wifi_tethering_rounded; case ShareType.unknown: return Icons.search_rounded; } }
   Future<void> _loadHistory() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('parse_history');
@@ -142,6 +149,68 @@ class _ParsePageState extends State<ParsePage> {
       ));
       return;
     }
+
+    // UC 分享：直接取直链下载（**无需转存**）。单文件直接入队，文件夹进列表多选。
+    if (_detectType(url) == ShareType.uc) {
+      if (!UcState.I.isLoggedIn) {
+        _toast('请先登录 UC 网盘（网盘 → UC 网盘 → 登录）');
+        return;
+      }
+      final parsed = UcClient.parseShareUrl(url);
+      if (parsed.pwdId.isEmpty) {
+        _toast('无法识别的 UC 分享链接');
+        return;
+      }
+      final pwd = _pwdController.text.trim().isNotEmpty
+          ? _pwdController.text.trim()
+          : parsed.passcode;
+      setState(() => _parsing = true);
+      try {
+        final client = UcState.I.client;
+        final session = await client.getShareToken(parsed.pwdId, pwd);
+        final files = await client.listShare(session, '0');
+        if (files.isEmpty) {
+          _toast('分享里没有可下载文件');
+          return;
+        }
+        await _saveHistory(url, pwd);
+        if (!mounted) return;
+        final onlyFiles = files.where((f) => !f.isDir).toList();
+        final hasDirs = files.any((f) => f.isDir);
+        if (!hasDirs && onlyFiles.length == 1) {
+          // 单文件分享：直接解析直链入队，不落盘到网盘
+          final f = onlyFiles.first;
+          final (infos, cookie) =
+              await client.getShareDownloadInfo(session, [f]);
+          if (infos.isEmpty) throw Exception('未获取到下载地址');
+          final base = await AppState.I.effectiveDownloadDir();
+          final info = infos.first;
+          final err = await DownloadService.addDirectUrl(
+            url: info.url,
+            fileName: info.fileName.isNotEmpty ? info.fileName : f.fileName,
+            cookie: cookie,
+            path: base,
+            batchTotal: 1,
+            referer: UcClient.referer,
+            userAgent: UcClient.uaPc,
+          );
+          if (err != null) throw Exception(err);
+          _toast('已加入下载队列（未转存）');
+          DownloadManager.I.startPolling();
+        } else {
+          await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) =>
+                UcSharePage(session: session, initialFiles: files),
+          ));
+        }
+      } catch (e) {
+        _toast('解析失败: $e');
+      } finally {
+        if (mounted) setState(() => _parsing = false);
+      }
+      return;
+    }
+
     if (!app.isLoggedIn) {
       _toast('请先登录夸克账号');
       return;

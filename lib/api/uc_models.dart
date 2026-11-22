@@ -109,3 +109,52 @@ class UcDownloadInfo {
     );
   }
 }
+
+/// UC 分享会话（sharepage/token 换来的 stoken）。
+class UcShareSession {
+  final String pwdId;
+  final String passcode;
+  final String stoken;
+
+  UcShareSession({
+    required this.pwdId,
+    required this.passcode,
+    required this.stoken,
+  });
+}
+
+/// UC 分享内的文件/文件夹（sharepage/detail 返回的条目）。
+class UcShareFile {
+  final String fid;
+  final String fileName;
+  final bool isDir;
+  final int size;
+
+  /// 取分享直链必须回传的 share_fid_token
+  final String fidToken;
+  final String fileExt;
+  final int updatedAt;
+
+  UcShareFile({
+    required this.fid,
+    required this.fileName,
+    required this.isDir,
+    required this.size,
+    required this.fidToken,
+    required this.fileExt,
+    required this.updatedAt,
+  });
+
+  factory UcShareFile.fromJson(Map<String, dynamic> json) {
+    final name = json['file_name']?.toString() ?? '';
+    return UcShareFile(
+      fid: json['fid']?.toString() ?? '',
+      fileName: name,
+      isDir: json['dir'] == true,
+      size: toInt(json['size']),
+      fidToken: json['share_fid_token']?.toString() ?? '',
+      fileExt: UcFile._ext(name),
+      updatedAt: toInt(json['updated_at']),
+    );
+  }
+}
