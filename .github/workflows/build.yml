@@ -2,7 +2,7 @@ name: Build Android
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/uc-drive]
   workflow_dispatch:
 
 concurrency:
