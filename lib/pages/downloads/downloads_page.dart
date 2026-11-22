@@ -509,23 +509,51 @@ class _DownloadsPageState extends State<DownloadsPage>
   }
 
   /// 在系统文件管理器里打开任务所在目录（Windows 会选中该文件）
+  ///
+  /// 注意：一定要传**存在的目录**。explorer 收到不存在的路径会退回默认文件夹
+  /// （表现为“打开去了我的文档”）。
   Future<void> _openFolder(GopeedTask task) async {
+    final downloadDir = await AppState.I.effectiveDownloadDir();
     final path = task.filePath;
-    if (path.isEmpty) {
-      _toast('找不到文件路径，请在下载目录里手动查看');
-      return;
+
+    // 候选：任务记录的文件路径 → 下载目录 + 任务名
+    String? filePath;
+    if (path.isNotEmpty) {
+      try {
+        if (await File(path).exists()) filePath = path;
+      } catch (_) {}
     }
-    var exists = false;
+    if (filePath == null && task.name.isNotEmpty) {
+      final guess = '$downloadDir${Platform.pathSeparator}${task.name}';
+      try {
+        if (await File(guess).exists()) filePath = guess;
+      } catch (_) {}
+    }
+    // 目录：优先文件所在目录，其次下载目录本身
+    var dir = filePath != null
+        ? File(filePath).parent.path
+        : (path.isNotEmpty ? File(path).parent.path : downloadDir);
     try {
-      exists = await File(path).exists();
-    } catch (_) {}
-    final dir = exists ? File(path).parent.path : path;
+      final d = Directory(dir);
+      if (!await d.exists()) {
+        if (await Directory(downloadDir).exists()) {
+          dir = downloadDir;
+        } else {
+          await Directory(downloadDir).create(recursive: true);
+          dir = downloadDir;
+        }
+      }
+    } catch (_) {
+      dir = downloadDir;
+    }
+    AppLogger.I.i('download',
+        '打开文件夹: 文件=${filePath ?? "未找到"} 目录=$dir 下载目录=$downloadDir');
     try {
       if (Platform.isWindows) {
         await Process.start(
-            'explorer.exe', exists ? ['/select,', path] : [dir]);
+            'explorer.exe', filePath != null ? ['/select,', filePath] : [dir]);
       } else if (Platform.isMacOS) {
-        await Process.start('open', exists ? ['-R', path] : [dir]);
+        await Process.start('open', filePath != null ? ['-R', filePath] : [dir]);
       } else if (Platform.isLinux) {
         await Process.start('xdg-open', [dir]);
       } else {
