@@ -51,6 +51,10 @@ class FlutterWindow : public Win32Window {
   // 托盘回调消息号（WM_APP + 1）。
   static constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 
+  // 托盘「退出」后等 Dart 停下载引擎的兜底定时器：到点仍未退出就强制关窗。
+  static constexpr UINT_PTR kExitFallbackTimerId = 1;
+  static constexpr UINT kExitFallbackDelayMs = 6000;
+
   // 窗口级文件拖放通道：Dart 端注册监听获取拖入的文件/文件夹路径。
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       drop_channel_;

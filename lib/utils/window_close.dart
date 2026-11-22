@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_miuix/miuix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/gopeed/gopeed_boot.dart';
 import '../widgets/miuix_common.dart';
 import 'app_logger.dart';
 
@@ -22,10 +23,14 @@ class WindowCloseHandler {
 
   static Future<void> init(GlobalKey<NavigatorState> key) async {
     navigatorKey = key;
-    // 注册原生 WM_CLOSE 回调（仅 Windows）
+    // 注册原生 WM_CLOSE / 托盘退出回调（仅 Windows）
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'onCloseRequested') {
-        await handleCloseRequest();
+      switch (call.method) {
+        case 'onCloseRequested':
+          await handleCloseRequest();
+        case 'onExitRequested':
+          // 托盘「退出」：不弹确认框，停了引擎直接退
+          await exitApp();
       }
     });
   }
@@ -112,6 +117,12 @@ class WindowCloseHandler {
   }
 
   static Future<void> exitApp() async {
+    try {
+      // 先停下载引擎（gopeed.exe），否则 App 退出后引擎会残留
+      await GopeedEngine.stop().timeout(const Duration(seconds: 4));
+    } catch (e) {
+      AppLogger.I.w('window', '退出前停止下载引擎失败: $e');
+    }
     try {
       await _channel.invokeMethod('exit');
     } catch (_) {}

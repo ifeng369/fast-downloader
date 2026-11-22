@@ -59,9 +59,10 @@ bool FlutterWindow::OnCreate() {
           }
           result->Success();
         } else if (method == "exit") {
-          // 真正退出：销毁窗口 → WM_DESTROY → 结束消息循环
-          DestroyWindow(GetHandle());
+          // 真正退出：先回包再销毁窗口（销毁后通道失效，不能再回包）
           result->Success();
+          DestroyWindow(GetHandle());
+          return;
         } else if (method == "restore") {
           // 恢复窗口（最小化/隐藏状态回到正常）
           RestoreFromTray();
@@ -99,6 +100,9 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  // 兜底：Dart 侧没来得及优雅停止时，强制结束随包的下载引擎，
+  // 避免 App 退出后 gopeed.exe 残留占用端口和数据库锁。
+  WinExec("taskkill /F /IM gopeed.exe", SW_HIDE);
   // 移除系统托盘图标，避免残留
   if (tray_added_) {
     Shell_NotifyIconW(NIM_DELETE, &tray_icon_);
@@ -134,6 +138,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
+    case WM_TIMER:
+      // 托盘退出兜底：Dart 迟迟不回调 exit 时强制关窗
+      if (wparam == kExitFallbackTimerId) {
+        KillTimer(hwnd, kExitFallbackTimerId);
+        DestroyWindow(hwnd);
+        return 0;
+      }
+      break;
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
@@ -203,7 +215,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
               Shell_NotifyIconW(NIM_DELETE, &tray_icon_);
               tray_added_ = false;
             }
-            DestroyWindow(hwnd);
+            if (window_channel_ != nullptr) {
+              // 先让 Dart 停掉下载引擎再退出；超时则强制关窗兜底
+              window_channel_->InvokeMethod("onExitRequested", nullptr);
+              SetTimer(hwnd, kExitFallbackTimerId, kExitFallbackDelayMs,
+                       nullptr);
+            } else {
+              DestroyWindow(hwnd);
+            }
           }
           break;
         }
