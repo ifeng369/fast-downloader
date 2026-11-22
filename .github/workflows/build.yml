@@ -41,7 +41,10 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          # 与 .metadata revision 058e0af2c2b5… 对应；更新的 stable 要求 Gradle ≥ 9.3.1，
+          # 而本项目 wrapper 为 8.14（AGP 8.13.2），因此固定到该版本
+          flutter-version: '3.44.8'
+          cache: true
 
       - name: Cache gopeed source
         uses: actions/cache@v4
@@ -130,7 +133,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.44.8'
           cache: true
 
       - name: Cache gopeed-web (windows amd64)
