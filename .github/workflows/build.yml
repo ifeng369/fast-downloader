@@ -37,7 +37,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          # gomobile 最新版要求 Go >= 1.26
+          go-version: '1.27'
+          # 仓库根没有 go.mod，禁用自带依赖缓存（gopeed 源码另有缓存）
+          cache: false
 
       - name: Setup Java
         uses: actions/setup-java@v5
