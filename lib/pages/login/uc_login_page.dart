@@ -15,6 +15,7 @@ class UcLoginPage extends StatefulWidget {
 class _UcLoginPageState extends State<UcLoginPage> {
   final _controller = TextEditingController();
   bool _submitting = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -48,7 +49,7 @@ class _UcLoginPageState extends State<UcLoginPage> {
                 '1. 电脑浏览器打开 drive.uc.cn 并登录\n'
                 '2. 按 F12 → Application → Cookies → https://drive.uc.cn\n'
                 '3. 全选所有 Cookie（形如 __pus=xxx; __puus=xxx; ...）复制\n'
-                '4. 粘贴到下方输入框\n\n'
+                '4. 粘贴到下方输入框（换行会自动清理，直接粘贴即可）\n\n'
                 '提示：手机浏览器打开网盘会跳「下载 App」页，请在电脑上获取。\n'
                 'Cookie 等同账号登录态，请勿分享给他人。',
                 color: colors.onSurfaceSecondary,
@@ -68,6 +69,15 @@ class _UcLoginPageState extends State<UcLoginPage> {
                 ),
               ),
             ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                child: MiuixText(
+                  _error!,
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
               child: MiuixButton(
@@ -99,19 +109,29 @@ class _UcLoginPageState extends State<UcLoginPage> {
   }
 
   Future<void> _submit() async {
-    final cookie = _controller.text.trim();
-    if (cookie.isEmpty) {
-      _toast('请先粘贴 Cookie');
+    final raw = _controller.text;
+    if (raw.trim().isEmpty) {
+      setState(() => _error = '请先粘贴 Cookie');
       return;
     }
-    setState(() => _submitting = true);
-    final err = await UcState.I.login(cookie);
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    if (err == null) {
-      Navigator.of(context).pop(true);
-    } else {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final err = await UcState.I.login(raw);
+      if (!mounted) return;
+      if (err == null) {
+        Navigator.of(context).pop(true);
+        return;
+      }
+      setState(() => _error = err);
       _toast('登录失败: $err');
+    } catch (e) {
+      // 兜底：任何异常都就地显示，避免"点了没反应"
+      if (mounted) setState(() => _error = '登录异常: $e');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 

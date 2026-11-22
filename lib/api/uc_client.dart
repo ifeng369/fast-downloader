@@ -47,8 +47,21 @@ class UcClient {
 
   bool get hasLogin => cookie.isNotEmpty;
 
+  /// 规范化 Cookie：折叠换行/制表符（F12 复制常带），丢弃空段和无 `=` 的段。
+  ///
+  /// 不处理的话，含换行的 Cookie 作为 HTTP 头会抛 ArgumentError，
+  /// 表现为"点了登录没反应"（异常被吞在错误提示里）。
+  static String normalizeCookie(String raw) {
+    return raw
+        .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
+        .split(';')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty && e.contains('='))
+        .join('; ');
+  }
+
   void setCookie(String c) {
-    cookie = c.trim();
+    cookie = normalizeCookie(c);
   }
 
   String get downloadCookieSnapshot => cookie;
