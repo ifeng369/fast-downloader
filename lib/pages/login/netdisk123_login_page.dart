@@ -321,3 +321,49 @@ class _QrLoginViewState extends State<_QrLoginView> {
     );
   }
 }
+
+/// 网页登录：应用内打开 123 网盘电脑版，登录后自动读取登录凭据
+class _WebLoginView extends StatelessWidget {
+  const _WebLoginView();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = MiuixTheme.of(context).colors;
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        MiuixText(
+          '在应用内打开 123 网盘电脑版，登录成功后会自动读取登录凭据，无需手动复制。',
+          color: colors.onSurfaceSecondary,
+          fontSize: 12,
+        ),
+        const SizedBox(height: 20),
+        MiuixButton(
+          onPressed: () async {
+            final ok = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) =>
+                    const WebLoginPage(provider: WebLoginProvider.netdisk123),
+              ),
+            );
+            if (ok == true && context.mounted) Navigator.of(context).pop(true);
+          },
+          colors: MiuixButtonColors(
+            color: colors.primary,
+            disabledColor: colors.primary,
+            contentColor: Colors.white,
+            disabledContentColor: Colors.white,
+          ),
+          child: const MiuixText('打开网页登录', color: Colors.white, fontSize: 15),
+        ),
+        const SizedBox(height: 14),
+        MiuixText(
+          '提示：登录凭据仅保存在本机；退出登录时会一并清理网页登录缓存。',
+          color: colors.onSurfaceSecondary,
+          fontSize: 11,
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
