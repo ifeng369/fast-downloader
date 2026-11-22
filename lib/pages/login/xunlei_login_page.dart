@@ -225,14 +225,18 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
                   : MiuixText('登录', color: Colors.white, fontSize: 15),
             ),
             const SizedBox(height: 14),
-            MiuixTextButton(
-              '在应用内打开迅雷网页登录（自动获取）',
+            MiuixButton(
               onPressed: _openWebLogin,
               colors: MiuixButtonColors(
-                color: colors.primary,
-                disabledColor: colors.primary,
-                contentColor: colors.primary,
-                disabledContentColor: colors.primary,
+                color: colors.surfaceContainer,
+                disabledColor: colors.surfaceContainer,
+                contentColor: colors.onSurfaceContainer,
+                disabledContentColor: colors.onSurfaceSecondary,
+              ),
+              child: MiuixText(
+                '在应用内打开迅雷网页登录（自动获取）',
+                color: colors.onSurfaceContainer,
+                fontSize: 15,
               ),
             ),
             const SizedBox(height: 14),
