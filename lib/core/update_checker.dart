@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -44,8 +46,10 @@ class UpdateChecker {
 
   /// 版本号：优先由构建注入（CI 用 --dart-define=APP_VERSION=1.3.10），
   /// 本地直接运行时回退到下方默认值（需与 pubspec.yaml 的 version 保持一致）
-  static const currentVersion =
-      String.fromEnvironment('APP_VERSION', defaultValue: '1.3.15');
+  static const currentVersion = String.fromEnvironment(
+    'APP_VERSION',
+    defaultValue: '1.3.15',
+  );
 
   static const repo = 'ifeng369/fast-downloader';
 
@@ -55,17 +59,20 @@ class UpdateChecker {
   /// 代理地址：https://gh.ifeng369.top/<原始 URL>
   static Uri proxyUrl(Uri url) => Uri.parse('$proxyPrefix${url.toString()}');
 
-  static final Uri _latestJsonUrl =
-      Uri.parse('https://github.com/$repo/releases/latest/download/latest.json');
+  static final Uri _latestJsonUrl = Uri.parse(
+    'https://github.com/$repo/releases/latest/download/latest.json',
+  );
 
   /// 最近一次检查失败的原因（手动检查时展示，避免把失败伪装成“已是最新”）
   static String? lastError;
 
-  static final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 12),
-    receiveTimeout: const Duration(seconds: 20),
-    headers: const {'User-Agent': 'fast-downloader-update-checker'},
-  ));
+  static final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 12),
+      receiveTimeout: const Duration(seconds: 20),
+      headers: const {'User-Agent': 'fast-downloader-update-checker'},
+    ),
+  );
 
   static Future<AppUpdate?> check() async {
     lastError = null;
@@ -100,8 +107,7 @@ class UpdateChecker {
       final data = resp.data;
       return data is String ? data : jsonEncode(data);
     } on DioException catch (e) {
-      lastError =
-          '获取 latest.json 失败（${e.response?.statusCode ?? e.type.name}）';
+      lastError = '获取 latest.json 失败（${e.response?.statusCode ?? e.type.name}）';
       return null;
     } catch (e) {
       lastError = '获取 latest.json 失败: $e';
@@ -117,15 +123,16 @@ class UpdateChecker {
     try {
       final data = jsonDecode(body);
       if (data is! Map) return null;
-      final version =
-          _normalize((data['version'] ?? data['tag'] ?? '').toString());
+      final version = _normalize(
+        (data['version'] ?? data['tag'] ?? '').toString(),
+      );
       if (version == null) return null;
-      final notes =
-          (data['notes'] ?? data['body'] ?? '').toString().trim();
+      final notes = (data['notes'] ?? data['body'] ?? '').toString().trim();
       return AppUpdate(
         version: version,
-        releaseUrl:
-            Uri.parse('https://github.com/$repo/releases/tag/v$version'),
+        releaseUrl: Uri.parse(
+          'https://github.com/$repo/releases/tag/v$version',
+        ),
         notes: notes,
         asset: pickAsset(data['assets']),
       );
@@ -144,13 +151,16 @@ class UpdateChecker {
         if (a is! Map) continue;
         final name = (a['name'] ?? '').toString();
         final url = Uri.tryParse(
-            (a['url'] ?? a['browser_download_url'] ?? '').toString());
+          (a['url'] ?? a['browser_download_url'] ?? '').toString(),
+        );
         if (name.isEmpty || url == null || !url.hasScheme) continue;
-        items.add(UpdateAsset(
-          name: name,
-          url: url,
-          sha256: (a['sha256'] ?? '').toString(),
-        ));
+        items.add(
+          UpdateAsset(
+            name: name,
+            url: url,
+            sha256: (a['sha256'] ?? '').toString(),
+          ),
+        );
       }
     }
     if (items.isEmpty || kIsWeb) return null;
@@ -172,76 +182,105 @@ class UpdateChecker {
 
   static const _skippedVersionKey = 'update_skipped_version';
 
+  /// 正在检查/弹窗中：防止连点导致重复请求与弹窗叠加
+  static bool _inFlight = false;
+
   static Future<void> checkAndPrompt(
     BuildContext context, {
     bool manual = false,
   }) async {
-    final update = await check();
-    if (!context.mounted) return;
-    if (update == null) {
+    if (_inFlight) return;
+    _inFlight = true;
+    var loadingShown = false;
+    try {
       if (manual) {
-        final err = lastError;
-        MiuixToast.show(err == null ? '当前已是最新版本' : '检查更新失败：$err');
-      }
-      return;
-    }
-    if (!manual && await _isSkipped(update.version)) return;
-    final notes = update.notes.isEmpty ? '' : '\n\n${update.notes}';
-    final asset = update.asset;
-    final choice = await miuixChoiceDialog<String>(
-      context,
-      title: '发现新版本 ${update.version}',
-      options: [
-        if (asset != null) 'direct',
-        if (asset != null) 'proxy',
-        'open',
-        'later',
-        'skip',
-      ],
-      current: asset != null ? 'direct' : 'open',
-      labelOf: (value) => switch (value) {
-        'direct' => '直接下载（加入下载任务）',
-        'proxy' => '代理下载（gh.ifeng369.top 加速）',
-        'open' => '打开 GitHub 下载页',
-        'skip' => '此次更新不再提醒',
-        _ => '稍后提醒',
-      },
-      hint: '当前版本 $currentVersion$notes',
-    );
-    switch (choice) {
-      case 'skip':
-        await _saveSkipped(update.version);
-      case 'open':
-        await launchUrl(update.releaseUrl,
-            mode: LaunchMode.externalApplication);
-      case 'direct':
-      case 'proxy':
-        final target = update.asset;
-        if (target == null) return;
-        final viaProxy = choice == 'proxy';
-        var err = await DownloadService.addDirectUrl(
-          url: (viaProxy ? proxyUrl(target.url) : target.url).toString(),
-          fileName: target.name,
-          cookie: '',
-          referer: 'https://github.com/',
-          // gh 代理不实现 Range（Range 请求仍返回 200 全量），
-          // 多线程分块会失败 → 代理下载强制单连接
-          connections: viaProxy ? 1 : null,
-          maxConnections: viaProxy ? 1 : null,
+        // 手动检查：先把「检查更新中…」显示出来，避免点了没反应
+        unawaited(
+          MiuixOverlayPanel.show(
+            context: context,
+            builder: (_) => const _UpdateLoadingDialog(),
+          ).catchError((Object _) {}),
         );
-        if (viaProxy && err != null) {
-          // 代理不可用/不稳定：自动回退直连
-          err = await DownloadService.addDirectUrl(
-            url: target.url.toString(),
+        loadingShown = true;
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+      }
+      final update = await check();
+      if (loadingShown) {
+        MiuixOverlayPanel.hide();
+        loadingShown = false;
+        // 等浮层移除动画，避免紧接着的选择弹窗被一起关掉
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
+      if (!context.mounted) return;
+      if (update == null) {
+        if (manual) {
+          final err = lastError;
+          MiuixToast.show(err == null ? '当前已是最新版本' : '检查更新失败：$err');
+        }
+        return;
+      }
+      if (!manual && await _isSkipped(update.version)) return;
+      final notes = update.notes.isEmpty ? '' : '\n\n${update.notes}';
+      final asset = update.asset;
+      final choice = await miuixChoiceDialog<String>(
+        context,
+        title: '发现新版本 ${update.version}',
+        options: [
+          if (asset != null) 'direct',
+          if (asset != null) 'proxy',
+          'open',
+          'later',
+          'skip',
+        ],
+        current: asset != null ? 'direct' : 'open',
+        labelOf: (value) => switch (value) {
+          'direct' => '直接下载（加入下载任务）',
+          'proxy' => '代理下载（gh.ifeng369.top 加速）',
+          'open' => '打开 GitHub 下载页',
+          'skip' => '此次更新不再提醒',
+          _ => '稍后提醒',
+        },
+        hint: '当前版本 $currentVersion$notes',
+      );
+      switch (choice) {
+        case 'skip':
+          await _saveSkipped(update.version);
+        case 'open':
+          await launchUrl(
+            update.releaseUrl,
+            mode: LaunchMode.externalApplication,
+          );
+        case 'direct':
+        case 'proxy':
+          final target = update.asset;
+          if (target == null) return;
+          final viaProxy = choice == 'proxy';
+          var err = await DownloadService.addDirectUrl(
+            url: (viaProxy ? proxyUrl(target.url) : target.url).toString(),
             fileName: target.name,
             cookie: '',
             referer: 'https://github.com/',
+            // gh 代理不实现 Range（Range 请求仍返回 200 全量），
+            // 多线程分块会失败 → 代理下载强制单连接
+            connections: viaProxy ? 1 : null,
+            maxConnections: viaProxy ? 1 : null,
           );
-          MiuixToast.show(
-              err == null ? '代理不可用，已改用直连下载：${target.name}' : err);
-          return;
-        }
-        MiuixToast.show(err == null ? '已加入下载任务：${target.name}' : err);
+          if (viaProxy && err != null) {
+            // 代理不可用/不稳定：自动回退直连
+            err = await DownloadService.addDirectUrl(
+              url: target.url.toString(),
+              fileName: target.name,
+              cookie: '',
+              referer: 'https://github.com/',
+            );
+            MiuixToast.show(err == null ? '代理不可用，已改用直连下载：${target.name}' : err);
+            return;
+          }
+          MiuixToast.show(err == null ? '已加入下载任务：${target.name}' : err);
+      }
+    } finally {
+      if (loadingShown) MiuixOverlayPanel.hide();
+      _inFlight = false;
     }
   }
 
@@ -274,5 +313,35 @@ class UpdateChecker {
       if (a[i] != b[i]) return a[i] > b[i];
     }
     return false;
+  }
+}
+
+/// 手动检查更新时的加载浮层（不可点击关闭）
+class _UpdateLoadingDialog extends StatelessWidget {
+  const _UpdateLoadingDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return MiuixOverlayDialog(
+      show: true,
+      content: MiuixDismissScope(
+        onDismissRequest: () {},
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: MiuixCircularProgressIndicator(size: 20, strokeWidth: 2),
+              ),
+              const SizedBox(width: 12),
+              MiuixText('检查更新中…', fontSize: 14),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
