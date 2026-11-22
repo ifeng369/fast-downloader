@@ -45,4 +45,18 @@ void main() {
     expect(uri.toString(),
         'https://gh.ifeng369.top/https://github.com/a/b/releases/download/v1/c.zip');
   });
+
+  test('versionFromLocation 解析 /releases/latest 的 302 目标', () {
+    expect(
+      UpdateChecker.versionFromLocation(
+          'https://github.com/ifeng369/fast-downloader/releases/tag/v1.3.10'),
+      '1.3.10',
+    );
+    expect(
+      UpdateChecker.versionFromLocation(
+          'https://github.com/ifeng369/fast-downloader/releases'),
+      isNull,
+    );
+    expect(UpdateChecker.versionFromLocation(''), isNull);
+  });
 }

@@ -41,12 +41,21 @@ class UpdateChecker {
   static const currentVersion =
       String.fromEnvironment('APP_VERSION', defaultValue: '1.3.10');
 
-  /// 自动更新检查指向本项目（fork）的 Release
-  static const _latestReleaseUrl =
-      'https://api.github.com/repos/ifeng369/fast-downloader/releases/latest';
+  static const repo = 'ifeng369/fast-downloader';
+
+  /// 轻量探测：/releases/latest 会 302 到 /releases/tag/vX.Y.Z，不消耗 API 限流
+  static const _latestPageUrl = 'https://github.com/$repo/releases/latest';
+
+  /// 兜底：GitHub API（匿名 60 次/小时/IP，容易 403）
+  static const _latestApiUrl =
+      'https://api.github.com/repos/$repo/releases/latest';
+
+  /// 最近一次检查失败的原因（手动检查时展示，避免把失败伪装成“已是最新”）
+  static String? lastError;
+
   static final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 8),
-    receiveTimeout: const Duration(seconds: 8),
+    connectTimeout: const Duration(seconds: 12),
+    receiveTimeout: const Duration(seconds: 20),
     headers: const {
       'Accept': 'application/vnd.github+json',
       'User-Agent': 'fast-downloader-update-checker',
@@ -54,8 +63,43 @@ class UpdateChecker {
   ));
 
   static Future<AppUpdate?> check() async {
+    lastError = null;
+    final viaRedirect = await _checkViaRedirect();
+    if (viaRedirect != null) return viaRedirect;
+    return _checkViaApi();
+  }
+
+  /// 1) 跟随 /releases/latest 的 302 拿到最新 tag（无 API 限流）
+  /// 注：asset 直接按固定文件名拼下载地址（CI 产物名固定）
+  static Future<AppUpdate?> _checkViaRedirect() async {
     try {
-      final response = await _dio.get<dynamic>(_latestReleaseUrl);
+      final resp = await _dio.get<dynamic>(
+        _latestPageUrl,
+        options: Options(followRedirects: false, validateStatus: (_) => true),
+      );
+      final version = versionFromLocation(
+          resp.headers.value('location') ?? '');
+      if (version == null) {
+        lastError = '无法解析最新版本（HTTP ${resp.statusCode}）';
+        return null;
+      }
+      if (!_isNewer(version, currentVersion)) return null;
+      return AppUpdate(
+        version: version,
+        releaseUrl: Uri.parse('https://github.com/$repo/releases/tag/v$version'),
+        notes: '',
+        asset: assetForVersion(version),
+      );
+    } catch (e) {
+      lastError = '网络错误: $e';
+      return null;
+    }
+  }
+
+  /// 2) 兜底走 GitHub API，可额外拿到更新说明与真实 asset 列表
+  static Future<AppUpdate?> _checkViaApi() async {
+    try {
+      final response = await _dio.get<dynamic>(_latestApiUrl);
       final data = response.data;
       if (data is! Map) return null;
       final tag = data['tag_name']?.toString() ?? '';
@@ -69,9 +113,36 @@ class UpdateChecker {
         notes: data['body']?.toString().trim() ?? '',
         asset: pickAsset(data['assets']),
       );
-    } catch (_) {
+    } on DioException catch (e) {
+      lastError = e.response?.statusCode == 403
+          ? 'GitHub API 限流（匿名 60 次/小时），请稍后再试'
+          : '检查失败: ${e.message}';
+      return null;
+    } catch (e) {
+      lastError ??= '检查失败: $e';
       return null;
     }
+  }
+
+  /// 从 302 Location（.../releases/tag/v1.3.10）解析版本号
+  static String? versionFromLocation(String location) {
+    final match = RegExp(r'/releases/tag/([^/?#]+)').firstMatch(location);
+    return match == null ? null : _normalize(match.group(1)!);
+  }
+
+  /// 按固定产物名拼 asset 下载地址（与 CI 发布命名保持一致）
+  static UpdateAsset? assetForVersion(String version) {
+    if (kIsWeb) return null;
+    final base = 'https://github.com/$repo/releases/download/v$version';
+    if (Platform.isWindows) {
+      const name = 'fast-downloader-windows-x64.zip';
+      return UpdateAsset(name: name, url: Uri.parse('$base/$name'));
+    }
+    if (Platform.isAndroid) {
+      const name = 'fast-downloader-arm64-v8a.apk';
+      return UpdateAsset(name: name, url: Uri.parse('$base/$name'));
+    }
+    return null;
   }
 
   /// GitHub 加速代理前缀（下载时拼在原始 URL 前面）
@@ -120,7 +191,11 @@ class UpdateChecker {
     final update = await check();
     if (!context.mounted) return;
     if (update == null) {
-      if (manual) MiuixToast.show('当前已是最新版本');
+      if (manual) {
+        final err = lastError;
+        MiuixToast.show(
+            err == null ? '当前已是最新版本' : '检查更新失败：$err');
+      }
       return;
     }
     if (!manual && await _isSkipped(update.version)) return;
