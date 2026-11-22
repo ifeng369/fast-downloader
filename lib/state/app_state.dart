@@ -438,6 +438,16 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 读取应用内 WebView 在指定 URL 下的 Cookie 请求头（仅 Android，原生 CookieManager）
+  Future<String?> webViewCookies(String url) async {
+    if (kIsWeb || !Platform.isAndroid) return null;
+    try {
+      return await _sysChannel.invokeMethod<String>('getCookies', {'url': url});
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 取走系统「分享到 Quarklite」进来的文本（取走后原生侧清空）
   Future<String?> takeSharedText() async {
     if (kIsWeb || !Platform.isAndroid) return null;

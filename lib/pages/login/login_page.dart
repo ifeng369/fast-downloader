@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -8,6 +10,7 @@ import '../../api/quark_auth.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/miuix_common.dart';
+import 'web_login_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -40,7 +43,7 @@ class _LoginPageState extends State<LoginPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: MiuixTabRow(
-                tabs: const ['扫码登录', 'Cookie 登录'],
+                tabs: const ['扫码登录', 'Cookie 登录', '网页登录'],
                 selectedTabIndex: _tabIndex,
                 onTabSelected: (i) => setState(() => _tabIndex = i),
               ),
@@ -51,6 +54,7 @@ class _LoginPageState extends State<LoginPage> {
                 children: const [
                   _QrLoginView(),
                   _CookieLoginView(),
+                  _WebLoginEntry(),
                 ],
               ),
             ),
@@ -281,5 +285,56 @@ class _CookieLoginViewState extends State<_CookieLoginView> {
   void _toast(String msg) {
     if (!mounted) return;
     MiuixToast.show(msg);
+  }
+}
+
+/// 「网页登录」入口：在应用内打开夸克电脑版登录页，登录后自动读取 Cookie。
+class _WebLoginEntry extends StatelessWidget {
+  const _WebLoginEntry();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = MiuixTheme.of(context).colors;
+    final supported = !kIsWeb && (Platform.isAndroid || Platform.isWindows);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            MiuixText(
+              supported
+                  ? '在应用内打开夸克网盘电脑版登录页，登录成功后自动读取 Cookie。\n'
+                      '比手动粘贴更稳：电脑退出账号也不影响应用里的登录态。'
+                  : '当前平台不支持自动读取 Cookie，请使用「Cookie 登录」。',
+              color: colors.onSurfaceSecondary,
+              fontSize: 12,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            if (supported)
+              MiuixButton(
+                onPressed: () async {
+                  final ok = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            const WebLoginPage(provider: WebLoginProvider.quark)),
+                  );
+                  if (ok == true && context.mounted) {
+                    Navigator.of(context).pop(true);
+                  }
+                },
+                colors: MiuixButtonColors(
+                  color: colors.primary,
+                  disabledColor: colors.primary,
+                  contentColor: Colors.white,
+                  disabledContentColor: Colors.white,
+                ),
+                child: MiuixText('打开网页登录', color: Colors.white, fontSize: 15),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.webkit.CookieManager
 import androidx.annotation.NonNull
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
@@ -82,6 +83,14 @@ open class MainActivity : FlutterActivity() {
                         val text = pendingSharedText
                         pendingSharedText = null
                         result.success(text)
+                    }
+                    "getCookies" -> {
+                        val url = call.argument<String>("url") ?: ""
+                        try {
+                            result.success(CookieManager.getInstance().getCookie(url))
+                        } catch (e: Exception) {
+                            result.error("ERROR", e.message, null)
+                        }
                     }
                     "openAllFilesAccess" -> {
                         openAllFilesAccess()

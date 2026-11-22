@@ -1,10 +1,14 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import '../../state/uc_state.dart';
 import '../../widgets/miuix_common.dart';
+import 'web_login_page.dart';
 
-/// UC 网盘登录页：Cookie 登录（UC 没有公开的扫码登录接口）。
+/// UC 网盘登录页：应用内网页登录（自动取 Cookie）或手动粘贴 Cookie。
 class UcLoginPage extends StatefulWidget {
   const UcLoginPage({super.key});
 
@@ -16,6 +20,17 @@ class _UcLoginPageState extends State<UcLoginPage> {
   final _controller = TextEditingController();
   bool _submitting = false;
   String? _error;
+
+  bool get _webLoginSupported =>
+      !kIsWeb && (Platform.isAndroid || Platform.isWindows);
+
+  Future<void> _openWebLogin() async {
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+          builder: (_) => const WebLoginPage(provider: WebLoginProvider.uc)),
+    );
+    if (ok == true && mounted) Navigator.of(context).pop(true);
+  }
 
   @override
   void dispose() {
@@ -45,7 +60,7 @@ class _UcLoginPageState extends State<UcLoginPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
               child: MiuixText(
-                'UC 网盘只支持 Cookie 登录。获取方法：\n'
+                'UC 网盘支持「应用内网页登录」或粘贴 Cookie：\n'
                 '1. 电脑浏览器打开 drive.uc.cn 并登录\n'
                 '2. 按 F12 → Application → Cookies → https://drive.uc.cn\n'
                 '3. 全选所有 Cookie（形如 __pus=xxx; __puus=xxx; ...）复制\n'
@@ -56,6 +71,21 @@ class _UcLoginPageState extends State<UcLoginPage> {
                 fontSize: 12,
               ),
             ),
+            if (_webLoginSupported)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                child: MiuixButton(
+                  onPressed: _openWebLogin,
+                  colors: MiuixButtonColors(
+                    color: colors.primary,
+                    disabledColor: colors.primary,
+                    contentColor: Colors.white,
+                    disabledContentColor: Colors.white,
+                  ),
+                  child: MiuixText('在应用内登录（自动获取 Cookie）',
+                      color: Colors.white, fontSize: 14),
+                ),
+              ),
             const SizedBox(height: 14),
             Expanded(
               child: Padding(
