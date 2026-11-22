@@ -28,7 +28,14 @@ class UcException implements Exception {
 /// [downloadCookieSnapshot] 一起交给下载引擎，并带 `Referer: https://drive.uc.cn/`。
 class UcClient {
   static const api = 'https://pc-api.uc.cn/1/clouddrive';
+
+  /// Referer 用（带结尾斜杠）
   static const referer = 'https://drive.uc.cn/';
+
+  /// Origin 用：UC 的 CORS 白名单按精确值匹配，**不能带结尾斜杠**
+  /// （带斜杠会返回 403 Invalid CORS request）
+  static const origin = 'https://drive.uc.cn';
+
   static const rootFid = '0';
 
   static const uaPc =
@@ -96,7 +103,7 @@ class UcClient {
     final headers = <String, dynamic>{
       'Accept': 'application/json, text/plain, */*',
       'Content-Type': 'application/json',
-      'Origin': referer,
+      'Origin': origin,
       'Referer': referer,
       'User-Agent': userAgent ?? uaPc,
       if (cookie.isNotEmpty) 'Cookie': cookie,
