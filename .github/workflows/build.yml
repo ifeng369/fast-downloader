@@ -283,3 +283,17 @@ jobs:
               --target "$GITHUB_SHA" \
               release/android/* release/*.zip
           fi
+
+          # 清理不属于本次构建的旧资产：产物改过名（app-*.apk → quarklite-*.apk），
+          # --clobber 只覆盖同名文件，旧名字会一直留在 Release 里，必须显式删除
+          EXPECTED=$( (cd release && ls android/*.apk *.zip 2>/dev/null) | xargs -r -n1 basename | sort || true)
+          if [ -n "$EXPECTED" ]; then
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+              -q '.assets[].name' | while read -r name; do
+              [ -z "$name" ] && continue
+              if ! printf '%s\n' "$EXPECTED" | grep -qxF "$name"; then
+                echo "::notice::删除过期资产 $name"
+                gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" -y || true
+              fi
+            done
+          fi
