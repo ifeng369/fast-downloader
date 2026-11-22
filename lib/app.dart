@@ -14,6 +14,7 @@ import 'pages/uploads/uploads_page.dart';
 import 'state/app_state.dart';
 import 'state/download_manager.dart';
 import 'state/netdisk123_state.dart';
+import 'state/share_inbox.dart';
 import 'state/uc_state.dart';
 import 'state/upload_manager.dart';
 import 'state/xunlei_state.dart';
@@ -30,7 +31,8 @@ class QuarkLiteApp extends StatefulWidget {
   State<QuarkLiteApp> createState() => _QuarkLiteAppState();
 }
 
-class _QuarkLiteAppState extends State<QuarkLiteApp> {
+class _QuarkLiteAppState extends State<QuarkLiteApp>
+    with WidgetsBindingObserver {
   final MiuixSnackbarHostState _snackbarHost = MiuixSnackbarHostState();
   bool _ready = false;
   String? _bootError;
@@ -38,7 +40,24 @@ class _QuarkLiteAppState extends State<QuarkLiteApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bootstrap();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从浏览器「分享」回到前台时，原生侧可能刚收到 ACTION_SEND
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_consumeSharedText());
+    }
+  }
+
+  /// 取走原生侧暂存的分享文本并交给解析页
+  Future<void> _consumeSharedText() async {
+    try {
+      final text = await AppState.I.takeSharedText();
+      if (text != null) ShareInbox.push(text);
+    } catch (_) {}
   }
 
   Future<void> _bootstrap() async {
@@ -60,6 +79,8 @@ class _QuarkLiteAppState extends State<QuarkLiteApp> {
     DownloadManager.I.startPolling();
     if (mounted) {
       setState(() => _ready = true);
+      // 冷启动：可能是从浏览器「分享」进来的
+      unawaited(_consumeSharedText());
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(UpdateChecker.checkAndPrompt(context));
       });
@@ -83,6 +104,7 @@ class _QuarkLiteAppState extends State<QuarkLiteApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     DownloadManager.I.stopPolling();
     _snackbarHost.dispose();
     super.dispose();
@@ -218,6 +240,24 @@ class _RootPageState extends State<RootPage> {
     UploadsPage(),
     MePage(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    ShareInbox.tabRequest.addListener(_onTabRequest);
+  }
+
+  @override
+  void dispose() {
+    ShareInbox.tabRequest.removeListener(_onTabRequest);
+    super.dispose();
+  }
+
+  /// 外部（分享接收）请求切换页签
+  void _onTabRequest() {
+    final i = ShareInbox.tabRequest.value;
+    if (i != _index && mounted) setState(() => _index = i);
+  }
 
   @override
   Widget build(BuildContext context) {

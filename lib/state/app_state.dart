@@ -438,6 +438,18 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// 取走系统「分享到 Quarklite」进来的文本（取走后原生侧清空）
+  Future<String?> takeSharedText() async {
+    if (kIsWeb || !Platform.isAndroid) return null;
+    try {
+      final t = await _sysChannel.invokeMethod<String>('takeSharedText');
+      final text = (t ?? '').trim();
+      return text.isEmpty ? null : text;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void dispose() {
     quark.dispose();

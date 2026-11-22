@@ -31,8 +31,13 @@ open class MainActivity : FlutterActivity() {
     private val LIVE_CHANNEL_ID = "quarklite_live_v2"
     private val LIVE_CHANNEL_LEGACY = "quarklite_live"
 
+    /// ACTION_SEND 分享进来的文本，等 Dart 侧取走
+    private var pendingSharedText: String? = null
+
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // 冷启动：可能是从浏览器「分享」进来的
+        captureShared(intent)
         val taskQueue =
             flutterEngine.dartExecutor.binaryMessenger.makeBackgroundTaskQueue()
         MethodChannel(
@@ -72,6 +77,11 @@ open class MainActivity : FlutterActivity() {
                         } catch (e: Exception) {
                             result.error("ERROR", e.message, null)
                         }
+                    }
+                    "takeSharedText" -> {
+                        val text = pendingSharedText
+                        pendingSharedText = null
+                        result.success(text)
                     }
                     "openAllFilesAccess" -> {
                         openAllFilesAccess()
@@ -267,6 +277,22 @@ open class MainActivity : FlutterActivity() {
             "promotable" to promotable,
             "reason" to promoteReason,
         )
+    }
+
+    /// 热启动：用户从浏览器「分享」时，singleTask 会走 onNewIntent
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureShared(intent)
+    }
+
+    /// 记录 ACTION_SEND(text/plain) 分享进来的文本，等 Dart 侧 takeSharedText 取走
+    private fun captureShared(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action != Intent.ACTION_SEND) return
+        if (intent.type?.startsWith("text/") != true) return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+        if (text.isNotEmpty()) pendingSharedText = text
     }
 
     /// 用系统安装器打开 APK；未授予「安装未知应用」时跳转授权页并返回 needPermission

@@ -8,6 +8,7 @@ import '../../api/uc_client.dart';
 import '../../state/app_state.dart';
 import '../../state/download_manager.dart';
 import '../../state/download_service.dart';
+import '../../state/share_inbox.dart';
 import '../../state/uc_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/file_list_anim.dart';
@@ -44,6 +45,40 @@ class _ParsePageState extends State<ParsePage> {
     _loadHistory();
     _urlController.addListener(_onInputChanged);
     _btController.addListener(_onInputChanged);
+    // 系统分享进来的链接（冷启动/热启动都可能到达）
+    ShareInbox.pending.addListener(_onSharedInbox);
+    final shared = ShareInbox.take();
+    if (shared != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _applyShared(shared));
+    }
+  }
+
+  @override
+  void dispose() {
+    ShareInbox.pending.removeListener(_onSharedInbox);
+    _urlController.dispose();
+    _pwdController.dispose();
+    _btController.dispose();
+    super.dispose();
+  }
+
+  void _onSharedInbox() {
+    final shared = ShareInbox.take();
+    if (shared != null) _applyShared(shared);
+  }
+
+  /// 把外部分享的文本填进输入框（保留整段文本，提取码会在解析时自动识别）
+  void _applyShared(String text) {
+    if (!mounted) return;
+    setState(() => _btMode = text.trim().startsWith('magnet:'));
+    if (_btMode) {
+      _btController.text = text;
+    } else {
+      _urlController.text = text;
+      _urlController.selection =
+          TextSelection.collapsed(offset: _urlController.text.length);
+    }
+    _toast('已填入分享链接，点击「解析」开始');
   }
 
   void _onInputChanged() {
