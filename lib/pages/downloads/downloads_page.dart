@@ -9,6 +9,7 @@ import '../../core/gopeed/gopeed_models.dart';
 import '../../state/app_state.dart';
 import '../../state/download_manager.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/app_logger.dart';
 import '../../utils/format.dart';
 import '../../widgets/empty_view.dart';
 import '../../widgets/file_icon.dart';
