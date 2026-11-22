@@ -14,8 +14,6 @@ class XunleiState extends ChangeNotifier {
   static const _kRefresh = 'xunlei_refresh_token';
   static const _kUser = 'xunlei_user_id';
   static const _kUsername = 'xunlei_username';
-  static const _kDevice = 'xunlei_device_id';
-  static const _kClientId = 'xunlei_client_id';
 
   static XunleiState? _instance;
   static XunleiState get I => _instance ??= XunleiState._();
@@ -26,9 +24,6 @@ class XunleiState extends ChangeNotifier {
   );
 
   String? username; // 登录账号（手机号/邮箱），仅本机展示
-  /// 网页登录时使用的网页端 client_id（token 与它绑定，续期时必须带上）；
-  /// 账号密码登录为空，走 App 的 client_id/client_secret
-  String _authClientId = '';
   bool _ready = false;
   Timer? _refreshTimer;
 
@@ -54,26 +49,25 @@ class XunleiState extends ChangeNotifier {
       final access = await _read(_kAccess);
       final refresh = await _read(_kRefresh);
       final user = await _read(_kUser);
-      final savedDevice = await _read(_kDevice);
-      _authClientId = await _read(_kClientId);
       username = await _read(_kUsername);
       // 网页登录的设备 ID 必须原样复用；账号密码登录则按 refresh_token 派生
-      client.webClientId = _authClientId;
       client.setTokens(
-          access: access,
-          refresh: refresh,
-          user: user,
-          device: savedDevice.isNotEmpty
-              ? savedDevice
-              : (refresh.isNotEmpty
-                  ? XunleiClient.deviceIdFor(refresh)
-                  : XunleiClient.deviceIdFor('$access$user')));
-      AppLogger.I.i('xunlei', '恢复登录态 access=${access.isNotEmpty} refresh=${refresh.isNotEmpty}');
+        access: access,
+        refresh: refresh,
+        user: user,
+        device: refresh.isNotEmpty
+            ? XunleiClient.deviceIdFor(refresh)
+            : XunleiClient.deviceIdFor('$access$user'),
+      );
+      AppLogger.I.i(
+        'xunlei',
+        '恢复登录态 access=${access.isNotEmpty} refresh=${refresh.isNotEmpty}',
+      );
       if (access.isNotEmpty && refresh.isNotEmpty) {
         // 后台续期验证
         unawaited(_autoRefresh());
       } else if (refresh.isNotEmpty) {
-        final err = await _refreshTokens();
+        final err = await client.refresh();
         if (err == null) {
           await _persist();
           notifyListeners();
@@ -85,16 +79,8 @@ class XunleiState extends ChangeNotifier {
     }
   }
 
-  /// 续期：网页登录的 token 必须用网页 client_id，否则会被拒绝
-  Future<String?> _refreshTokens() {
-    if (_authClientId.isNotEmpty) {
-      return client.refreshWith(clientId: _authClientId);
-    }
-    return client.refresh();
-  }
-
   Future<String?> _autoRefresh() async {
-    final err = await _refreshTokens();
+    final err = await client.refresh();
     if (err != null) {
       AppLogger.I.w('xunlei', '自动续期失败: $err');
       return err;
@@ -116,8 +102,6 @@ class XunleiState extends ChangeNotifier {
       return err;
     }
     username = normalized;
-    _authClientId = '';
-    client.webClientId = '';
     await _persist();
     _startRefresher();
     AppLogger.I.i('xunlei', '登录成功 user=${client.userId}');
@@ -126,66 +110,12 @@ class XunleiState extends ChangeNotifier {
     return null;
   }
 
-  /// PC 网页登录：用网页里拿到的 token + 网页设备 ID 恢复登录态。
-  ///
-  /// 网页 token 绑定网页端 client（`credentials_<clientId>` 的 clientId），
-  /// 所以先用云盘接口直接校验，失败时再用网页 client_id 续期。
-  Future<String?> loginWithWebTokens({
-    required String access,
-    required String refresh,
-    String user = '',
-    String device = '',
-    String webClientId = '',
-  }) async {
-    client.webClientId = webClientId;
-    client.setTokens(
-        access: access, refresh: refresh, user: user, device: device);
-    String? err;
-    try {
-      await client.probeDrive();
-    } catch (e) {
-      err = e.toString();
-    }
-    if (err != null && refresh.isNotEmpty && webClientId.isNotEmpty) {
-      AppLogger.I.w('xunlei', '网页 token 直连云盘失败（$err），用网页 client 续期');
-      final rerr = await client.refreshWith(clientId: webClientId);
-      if (rerr == null) {
-        try {
-          await client.probeDrive();
-          err = null;
-        } catch (e) {
-          err = e.toString();
-        }
-      } else {
-        err = '$err；续期失败: $rerr';
-      }
-    }
-    if (err != null) {
-      client.setTokens();
-      client.webClientId = '';
-      AppLogger.I.w('xunlei', '网页登录校验失败: $err');
-      // 网页 token 无法满足 App 的 captcha 签名链，给出可操作提示
-      if (err.toLowerCase().contains('captcha') ||
-          err.contains('验证码')) {
-        return '迅雷要求验证码校验，网页登录态无法签名完成，请改用「账号密码登录」';
-      }
-      return err;
-    }
-    username = user.isNotEmpty ? user : username;
-    _authClientId = webClientId;
-    await _persist();
-    _startRefresher();
-    AppLogger.I.i('xunlei', '网页登录成功 user=${client.userId}');
-    try {
-      await refreshQuota();
-    } catch (_) {}
-    notifyListeners();
-    return null;
-  }
-
   /// 风控验证完成后，用新的 creditkey 重试登录
   Future<String?> loginWithCreditKey(
-      String account, String password, String key) async {
+    String account,
+    String password,
+    String key,
+  ) async {
     client.creditKey = key.trim();
     client.reviewUrl = '';
     final err = await login(account, password);
@@ -197,21 +127,12 @@ class XunleiState extends ChangeNotifier {
 
   Future<void> logout() async {
     client.setTokens();
-    client.webClientId = '';
     username = null;
-    _authClientId = '';
     _totalSize = -1;
     _usedSize = -1;
     _refreshTimer?.cancel();
     _refreshTimer = null;
-    for (final k in [
-      _kAccess,
-      _kRefresh,
-      _kUser,
-      _kUsername,
-      _kDevice,
-      _kClientId
-    ]) {
+    for (final k in [_kAccess, _kRefresh, _kUser, _kUsername]) {
       try {
         await _secure.delete(key: k);
       } catch (_) {}
@@ -253,8 +174,6 @@ class XunleiState extends ChangeNotifier {
 
   Future<void> _persist() async {
     await _write(_kAccess, client.accessToken);
-    await _write(_kDevice, client.deviceId);
-    await _write(_kClientId, _authClientId);
     await _write(_kRefresh, client.refreshToken);
     await _write(_kUser, client.userId);
     if (username != null) await _write(_kUsername, username!);

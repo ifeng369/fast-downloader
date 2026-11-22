@@ -16,7 +16,7 @@ import '../../state/netdisk123_state.dart';
 import '../../state/uc_state.dart';
 import '../../state/xunlei_state.dart';
 
-enum WebLoginProvider { quark, uc, xunlei, netdisk123 }
+enum WebLoginProvider { quark, uc, netdisk123 }
 
 const _desktopUa =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -52,77 +52,61 @@ class _WebLoginPageState extends State<WebLoginPage> {
   static const double _zoomStep = 0.2;
 
   bool get _isUc => widget.provider == WebLoginProvider.uc;
-  bool get _isXunlei => widget.provider == WebLoginProvider.xunlei;
   bool get _isPan123 => widget.provider == WebLoginProvider.netdisk123;
 
-  /// 夸克/UC 走 cookie；迅雷/123 的网页登录态是 localStorage 里的 token
-  bool get _useCookie => !_isXunlei && !_isPan123;
+  /// 夸克/UC 走 cookie；123 的网页登录态是 localStorage/cookie 里的 token
+  bool get _useCookie => !_isPan123;
 
   String get _title => switch (widget.provider) {
-        WebLoginProvider.quark => '登录夸克网盘',
-        WebLoginProvider.uc => '登录 UC 网盘',
-        WebLoginProvider.xunlei => '登录迅雷云盘',
-        WebLoginProvider.netdisk123 => '登录 123 网盘',
-      };
+    WebLoginProvider.quark => '登录夸克网盘',
+    WebLoginProvider.uc => '登录 UC 网盘',
+    WebLoginProvider.netdisk123 => '登录 123 网盘',
+  };
 
   String get _ua => switch (widget.provider) {
-        WebLoginProvider.quark => QuarkClient.uaPc,
-        WebLoginProvider.uc => UcClient.uaPc,
-        WebLoginProvider.xunlei => _desktopUa,
-        WebLoginProvider.netdisk123 => _desktopUa,
-      };
+    WebLoginProvider.quark => QuarkClient.uaPc,
+    WebLoginProvider.uc => UcClient.uaPc,
+    WebLoginProvider.netdisk123 => _desktopUa,
+  };
 
   String get _loginUrl => switch (widget.provider) {
-        WebLoginProvider.quark => 'https://pan.quark.cn/',
-        WebLoginProvider.uc => 'https://drive.uc.cn/',
-        WebLoginProvider.xunlei => 'https://pan.xunlei.com/login/',
-        // 123 的账号中心登录页（登录成功后写 cookie sso-token，等价于 authorToken）
-        WebLoginProvider.netdisk123 => 'https://user.123pan.cn/centerlogin',
-      };
+    WebLoginProvider.quark => 'https://pan.quark.cn/',
+    WebLoginProvider.uc => 'https://drive.uc.cn/',
+    // 123 的账号中心登录页（登录成功后写 cookie sso-token，等价于 authorToken）
+    WebLoginProvider.netdisk123 => 'https://user.123pan.cn/centerlogin',
+  };
 
   /// 登录态 cookie 名（夸克/UC 都是 Alibaba 系，均用 __pus）
   String get _sessionCookie => '__pus';
 
   List<String> get _cookieHosts => switch (widget.provider) {
-        WebLoginProvider.uc => ['https://drive.uc.cn', 'https://pc-api.uc.cn'],
-        WebLoginProvider.quark => [
-            'https://pan.quark.cn',
-            'https://drive.quark.cn',
-            'https://pc-api.quark.cn'
-          ],
-        WebLoginProvider.xunlei => [
-            'https://pan.xunlei.com',
-            'https://xluser-ssl.xunlei.com'
-          ],
-        WebLoginProvider.netdisk123 => [
-            'https://user.123pan.cn',
-            'https://www.123pan.com',
-            'https://api.123278.com'
-          ],
-      };
+    WebLoginProvider.uc => ['https://drive.uc.cn', 'https://pc-api.uc.cn'],
+    WebLoginProvider.quark => [
+      'https://pan.quark.cn',
+      'https://drive.quark.cn',
+      'https://pc-api.quark.cn',
+    ],
+    WebLoginProvider.netdisk123 => [
+      'https://user.123pan.cn',
+      'https://www.123pan.com',
+      'https://api.123278.com',
+    ],
+  };
 
   List<String> get _domainSuffixes => switch (widget.provider) {
-        WebLoginProvider.uc => ['uc.cn'],
-        WebLoginProvider.quark => ['quark.cn'],
-        WebLoginProvider.xunlei => ['xunlei.com'],
-        WebLoginProvider.netdisk123 => ['123pan.cn', '123pan.com', '123278.com'],
-      };
+    WebLoginProvider.uc => ['uc.cn'],
+    WebLoginProvider.quark => ['quark.cn'],
+    WebLoginProvider.netdisk123 => ['123pan.cn', '123pan.com', '123278.com'],
+  };
 
   /// 在页面里读 token：
   /// - 迅雷：SSO SDK 把凭据存成 localStorage['credentials_<clientId>'] = {access_token, refresh_token, ...}
   /// - 123：localStorage['authorToken']
-  String get _storageScript => _isXunlei
-      ? "(function(){try{var a='',r='',u='',c='';"
-          "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
-          "if(!k||k.indexOf('credentials_')!==0)continue;var v={};"
-          "try{v=JSON.parse(localStorage.getItem(k)||'{}')}catch(e){continue}"
-          "if(v&&v.access_token){a=String(v.access_token);r=String(v.refresh_token||'');"
-          "u=String(v.user_id||v.sub||'');c=k.substr(12).split('@')[0]}}"
-          "return JSON.stringify({access:a,refresh:r,user:u,client:c})}catch(e){return '{}'}})()"
-      : "(function(){try{var t='';"
-          "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
-          "if(k&&k.toLowerCase()==='authortoken')t=String(localStorage.getItem(k)||'')}"
-          "return JSON.stringify({token:t})}catch(e){return '{}'}})()";
+  String get _storageScript =>
+      "(function(){try{var t='';"
+      "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
+      "if(k&&k.toLowerCase()==='authortoken')t=String(localStorage.getItem(k)||'')}"
+      "return JSON.stringify({token:t})}catch(e){return '{}'}})()";
 
   @override
   void initState() {
@@ -163,17 +147,19 @@ class _WebLoginPageState extends State<WebLoginPage> {
       ..setUserAgent(_ua)
       // 允许双指缩放
       ..enableZoom(true)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) {
-          _applyZoom();
-          _checkLogin();
-        },
-        onWebResourceError: (e) {
-          if (e.isForMainFrame ?? true) {
-            _setStatus('加载失败：${e.description}');
-          }
-        },
-      ))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) {
+            _applyZoom();
+            _checkLogin();
+          },
+          onWebResourceError: (e) {
+            if (e.isForMainFrame ?? true) {
+              _setStatus('加载失败：${e.description}');
+            }
+          },
+        ),
+      )
       ..loadRequest(Uri.parse(_loginUrl));
     if (!mounted) return;
     setState(() {
@@ -212,7 +198,8 @@ class _WebLoginPageState extends State<WebLoginPage> {
       } else if (Platform.isAndroid) {
         // Android WebView 没有统一 zoomFactor，用 CSS zoom 控制（Chromium 支持）
         await _androidController?.runJavaScript(
-            "document.body.style.zoom = '${_zoom.toStringAsFixed(2)}';");
+          "document.body.style.zoom = '${_zoom.toStringAsFixed(2)}';",
+        );
       }
     } catch (_) {}
   }
@@ -230,14 +217,9 @@ class _WebLoginPageState extends State<WebLoginPage> {
   }
 
   /// 读当前页面可用的登录凭据（JSON 字符串）；没有可用凭据时返回空串。
-  /// - 迅雷：localStorage `credentials_*` 里的 access/refresh
-  /// - 123：localStorage `authorToken`，登录中心(user.123pan.cn)回退到 cookie `sso-token`
+  /// 123：localStorage `authorToken`，登录中心(user.123pan.cn)回退到 cookie `sso-token`
   Future<String> _readCredential() async {
     final map = <String, dynamic>{..._decode(await _readStorage())};
-    if (_isXunlei) {
-      if ((map['access'] ?? '').toString().isEmpty) return '';
-      return jsonEncode(map);
-    }
     if (_isPan123) {
       if ((map['token'] ?? '').toString().isEmpty) {
         // 登录中心只把 token 写进 cookie；www 页面才会回填 localStorage.authorToken
@@ -258,8 +240,9 @@ class _WebLoginPageState extends State<WebLoginPage> {
         final value = await _winController?.executeScript(_storageScript);
         return _unwrap(value);
       }
-      final value =
-          await _androidController?.runJavaScriptReturningResult(_storageScript);
+      final value = await _androidController?.runJavaScriptReturningResult(
+        _storageScript,
+      );
       return _unwrap(value);
     } catch (_) {
       return '';
@@ -298,8 +281,9 @@ class _WebLoginPageState extends State<WebLoginPage> {
         for (final part in header.split(';')) {
           final idx = part.indexOf('=');
           if (idx <= 0) continue;
-          byName[part.substring(0, idx).trim()] =
-              part.substring(idx + 1).trim();
+          byName[part.substring(0, idx).trim()] = part
+              .substring(idx + 1)
+              .trim();
         }
       }
     } else if (!kIsWeb && Platform.isWindows) {
@@ -348,24 +332,6 @@ class _WebLoginPageState extends State<WebLoginPage> {
         err = _isUc
             ? await UcState.I.login(cookie)
             : await AppState.I.login(cookie);
-      } else if (_isXunlei) {
-        final raw = credential ?? await _readStorage();
-        final map = _decode(raw);
-        final access = (map['access'] ?? '').toString();
-        final refresh = (map['refresh'] ?? '').toString();
-        final user = (map['user'] ?? '').toString();
-        if (access.isEmpty) {
-          _setStatus('还没有读到迅雷登录凭据，请先在页面里完成登录');
-          return;
-        }
-        final device = _cookieValue(await _readCookieHeader(), 'deviceid');
-        err = await XunleiState.I.loginWithWebTokens(
-          access: access,
-          refresh: refresh,
-          user: user,
-          device: device,
-          webClientId: (map['client'] ?? '').toString(),
-        );
       } else {
         final raw = credential ?? await _readStorage();
         final token = (_decode(raw)['token'] ?? '').toString();
@@ -409,17 +375,24 @@ class _WebLoginPageState extends State<WebLoginPage> {
         navigationIcon: MiuixIconButton(
           onPressed: () => Navigator.of(context).maybePop(),
           child: MiuixIcon(
-              icon: Icons.arrow_back_ios_new_rounded,
-              tint: colors.onSurfaceContainer,
-              size: 20),
+            icon: Icons.arrow_back_ios_new_rounded,
+            tint: colors.onSurfaceContainer,
+            size: 20,
+          ),
         ),
         actions: [
           MiuixIconButton(
             onPressed: () => _changeZoom(-_zoomStep),
-            child: MiuixIcon(icon: Icons.zoom_out_rounded, tint: colors.primary),
+            child: MiuixIcon(
+              icon: Icons.zoom_out_rounded,
+              tint: colors.primary,
+            ),
           ),
-          MiuixText('${(_zoom * 100).round()}%',
-              fontSize: 12, color: colors.onSurfaceSecondary),
+          MiuixText(
+            '${(_zoom * 100).round()}%',
+            fontSize: 12,
+            color: colors.onSurfaceSecondary,
+          ),
           MiuixIconButton(
             onPressed: () => _changeZoom(_zoomStep),
             child: MiuixIcon(icon: Icons.zoom_in_rounded, tint: colors.primary),
@@ -435,7 +408,8 @@ class _WebLoginPageState extends State<WebLoginPage> {
               padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
               decoration: BoxDecoration(
                 border: Border(
-                    top: BorderSide(color: colors.dividerLine, width: 0.5)),
+                  top: BorderSide(color: colors.dividerLine, width: 0.5),
+                ),
               ),
               child: SafeArea(
                 top: false,

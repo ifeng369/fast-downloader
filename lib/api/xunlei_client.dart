@@ -96,7 +96,17 @@ class XunleiFile {
   String get bestDownloadUrl => mediaUrl.isNotEmpty ? mediaUrl : webContentLink;
 
   static const _videoExts = {
-    'mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v', 'ts', 'rmvb', 'rm',
+    'mp4',
+    'mkv',
+    'avi',
+    'mov',
+    'wmv',
+    'flv',
+    'webm',
+    'm4v',
+    'ts',
+    'rmvb',
+    'rm',
   };
 
   bool get isVideo {
@@ -146,21 +156,18 @@ class XunleiClient {
     'ThTWPG5eC0UBqlbQ+04nZAptqGCdpv9o55A',
   ];
 
-  final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 30),
-  ));
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 30),
+    ),
+  );
 
   String accessToken = '';
   String refreshToken = '';
   String userId = '';
   String deviceId = '';
   String captchaToken = '';
-
-  /// 网页登录会话使用的网页端 client_id（非空表示当前是网页 token）。
-  /// 网页 token 与 App 的 captcha 签名链不兼容，因此这种会话不发 captcha 头、
-  /// 也不做 captcha 刷新，否则会报 invalid captcha_sign。
-  String webClientId = '';
 
   /// 风控验证：验证链接与人工验证后的密钥（review_panel 流程）
   String reviewUrl = '';
@@ -169,8 +176,12 @@ class XunleiClient {
   bool get hasLogin => accessToken.isNotEmpty;
   bool get reviewPending => reviewUrl.isNotEmpty;
 
-  void setTokens(
-      {String access = '', String refresh = '', String user = '', String device = ''}) {
+  void setTokens({
+    String access = '',
+    String refresh = '',
+    String user = '',
+    String device = '',
+  }) {
     accessToken = access;
     refreshToken = refresh;
     userId = user;
@@ -214,34 +225,37 @@ class XunleiClient {
       'protocolVersion/301 platformversion/10 sdkVersion/$sdkVersion '
       'Oauth2Client/0.9 (Linux 4_9_337-perf-sn-uotan-gd9d488809c3d) (JAVA 0)';
 
-  bool get isWebSession => webClientId.isNotEmpty;
-
   Map<String, dynamic> _authHeaders() => {
-        'user-agent': buildUserAgent(deviceId),
-        'accept': 'application/json;charset=UTF-8',
-        'x-device-id': deviceId,
-        'x-client-id': isWebSession ? webClientId : clientId,
-        'x-client-version': clientVersion,
-        if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-        // 网页 token 不接受 App 的 captcha 签名，发了反而报 invalid captcha_sign
-        if (!isWebSession && captchaToken.isNotEmpty)
-          'X-Captcha-Token': captchaToken,
-      };
+    'user-agent': buildUserAgent(deviceId),
+    'accept': 'application/json;charset=UTF-8',
+    'x-device-id': deviceId,
+    'x-client-id': clientId,
+    'x-client-version': clientVersion,
+    if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
+    if (captchaToken.isNotEmpty) 'X-Captcha-Token': captchaToken,
+  };
 
   Future<Map<String, dynamic>> _post(
-      String url, Map<String, dynamic> body) async {
-    final resp = await _dio.post<dynamic>(url,
-        data: body,
-        options: Options(headers: _authHeaders(), validateStatus: (_) => true));
+    String url,
+    Map<String, dynamic> body,
+  ) async {
+    final resp = await _dio.post<dynamic>(
+      url,
+      data: body,
+      options: Options(headers: _authHeaders(), validateStatus: (_) => true),
+    );
     return _parse(resp);
   }
 
-  Future<Map<String, dynamic>> _get(String url,
-      {Map<String, dynamic>? params}) async {
-    final resp = await _dio.get<dynamic>(url,
-        queryParameters: params,
-        options: Options(
-            headers: _authHeaders(), validateStatus: (_) => true));
+  Future<Map<String, dynamic>> _get(
+    String url, {
+    Map<String, dynamic>? params,
+  }) async {
+    final resp = await _dio.get<dynamic>(
+      url,
+      queryParameters: params,
+      options: Options(headers: _authHeaders(), validateStatus: (_) => true),
+    );
     return _parse(resp);
   }
 
@@ -250,8 +264,8 @@ class XunleiClient {
     final map = body is Map
         ? body.cast<String, dynamic>()
         : body is String && body.isNotEmpty
-            ? (jsonDecode(body) as Map<String, dynamic>)
-            : <String, dynamic>{};
+        ? (jsonDecode(body) as Map<String, dynamic>)
+        : <String, dynamic>{};
     final code = toInt(map['error_code'], fallback: -1);
     final err = toStr(map['error']);
     if (code != 0 && err != 'success' && err.isNotEmpty) {
@@ -281,9 +295,7 @@ class XunleiClient {
       'client_id': clientId,
       'device_id': deviceId,
       if (creditKey.isNotEmpty) 'creditkey': creditKey,
-      'meta': {
-        'username': username,
-      },
+      'meta': {'username': username},
       'redirect_uri': 'xlaccsdk01://xunlei.com/callback?state=harbor',
     });
     final url = toStr(map['url']);
@@ -342,41 +354,6 @@ class XunleiClient {
     }
   }
 
-  /// 用额外 client 凭据续期（网页端 token 绑定网页 client，不能用 App 的）
-  Future<String?> refreshWith({required String clientId, String secret = ''}) async {
-    if (refreshToken.isEmpty) return 'refresh_token 缺失，请重新登录';
-    try {
-      final map = await _post('$_authBase/auth/token', {
-        'grant_type': 'refresh_token',
-        'refresh_token': refreshToken,
-        'client_id': clientId,
-        if (secret.isNotEmpty) 'client_secret': secret,
-      });
-      final access = toStr(map['access_token']);
-      if (access.isEmpty) return '续期失败: ${toStr(map['error_description'], fallback: toStr(map['error']))}';
-      accessToken = access;
-      final rt = toStr(map['refresh_token']);
-      if (rt.isNotEmpty) refreshToken = rt;
-      return null;
-    } catch (e) {
-      return e.toString();
-    }
-  }
-
-  /// 校验 token 能否访问云盘（一次最小请求，不依赖 xluser 的 client 绑定）。
-  /// 用原始 _get：网页会话不能触发 captcha 刷新（会报 invalid captcha_sign）。
-  Future<void> probeDrive() async {
-    await _get('$_driveBase/files', params: {
-      'parent_id': rootParentId,
-      'limit': '1',
-      'space': rootSpace,
-      'filters': jsonEncode({
-        'trashed': {'eq': false},
-      }),
-      'with_audit': true,
-    });
-  }
-
   /// refresh_token 续期，返回 null 表示成功
   Future<String?> refresh() async {
     if (refreshToken.isEmpty) return 'refresh_token 缺失，请重新登录';
@@ -425,8 +402,10 @@ class XunleiClient {
   }
 
   /// 带 token 续期/验证码刷新的请求包装：过期错误码自动处理并重试一次
-  Future<Map<String, dynamic>> _authGet(String url,
-      {Map<String, dynamic>? params}) async {
+  Future<Map<String, dynamic>> _authGet(
+    String url, {
+    Map<String, dynamic>? params,
+  }) async {
     try {
       return await _get(url, params: params);
     } on XunleiException catch (e) {
@@ -435,8 +414,7 @@ class XunleiClient {
         if (err != null) rethrow;
         return _get(url, params: params);
       }
-      if (!isWebSession &&
-          e.code == 9 &&
+      if (e.code == 9 &&
           (e.rawError == 'captcha_invalid' ||
               e.message.contains('验证码') ||
               e.message.contains('captcha'))) {
@@ -451,22 +429,27 @@ class XunleiClient {
   // ---------------- 云盘 ----------------
 
   /// 文件列表（自动翻页）。根目录 space 为 SPACE_BROWSER，子目录沿用文件自身的 space。
-  Future<List<XunleiFile>> listFiles(String parentId,
-      {String space = rootSpace}) async {
+  Future<List<XunleiFile>> listFiles(
+    String parentId, {
+    String space = rootSpace,
+  }) async {
     final files = <XunleiFile>[];
     var pageToken = '';
     for (var page = 0; page < 100; page++) {
-      final map = await _authGet('$_driveBase/files', params: {
-        'parent_id': parentId,
-        'page_token': pageToken,
-        'space': space,
-        'filters': jsonEncode({
-          'trashed': {'eq': false},
-        }),
-        'with': 'url',
-        'with_audit': true,
-        'thumbnail_size': 'SIZE_LARGE',
-      });
+      final map = await _authGet(
+        '$_driveBase/files',
+        params: {
+          'parent_id': parentId,
+          'page_token': pageToken,
+          'space': space,
+          'filters': jsonEncode({
+            'trashed': {'eq': false},
+          }),
+          'with': 'url',
+          'with_audit': true,
+          'thumbnail_size': 'SIZE_LARGE',
+        },
+      );
       final list = map['files'];
       if (list is! List) break;
       for (final item in list.whereType<Map>()) {
@@ -481,12 +464,15 @@ class XunleiClient {
 
   /// 获取文件详情（含高速下载直链）
   Future<XunleiFile> getFileDetail(String id, {String space = ''}) async {
-    final map = await _authGet('$_driveBase/files/$id', params: {
-      '_magic': '2021',
-      'space': space,
-      'thumbnail_size': 'SIZE_LARGE',
-      'with': 'url',
-    });
+    final map = await _authGet(
+      '$_driveBase/files/$id',
+      params: {
+        '_magic': '2021',
+        'space': space,
+        'thumbnail_size': 'SIZE_LARGE',
+        'with': 'url',
+      },
+    );
     return XunleiFile.fromJson(map);
   }
 
@@ -494,17 +480,20 @@ class XunleiClient {
   ///
   /// 两个必须点（实测）：**带空 JSON body** 且 **带 `?space=` 查询参数**，
   /// 否则服务端会以"文件(夹)不存在"拒绝。
-  Future<void> deleteFiles(List<String> ids,
-      {String space = rootSpace}) async {
+  Future<void> deleteFiles(List<String> ids, {String space = rootSpace}) async {
     for (final id in ids) {
       Future<Map<String, dynamic>> call() async => _parse(
-          await _dio.request<dynamic>('$_driveBase/files/$id/trash',
-              data: const <String, dynamic>{},
-              queryParameters: {'space': space},
-              options: Options(
-                  method: 'PATCH',
-                  headers: _authHeaders(),
-                  validateStatus: (_) => true)));
+        await _dio.request<dynamic>(
+          '$_driveBase/files/$id/trash',
+          data: const <String, dynamic>{},
+          queryParameters: {'space': space},
+          options: Options(
+            method: 'PATCH',
+            headers: _authHeaders(),
+            validateStatus: (_) => true,
+          ),
+        ),
+      );
       try {
         await call();
       } on XunleiException catch (e) {
@@ -520,7 +509,8 @@ class XunleiClient {
 
   /// 批量获取文件详情（含直链/媒体链接，失败项跳过）
   Future<Map<String, XunleiFile>> getDownloadFiles(
-      List<(String, String)> idAndSpace) async {
+    List<(String, String)> idAndSpace,
+  ) async {
     final result = <String, XunleiFile>{};
     for (final (id, space) in idAndSpace) {
       try {

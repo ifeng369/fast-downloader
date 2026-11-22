@@ -9,7 +9,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../state/xunlei_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/miuix_common.dart';
-import 'web_login_page.dart';
 import 'xunlei_review_page.dart';
 
 /// 迅雷云盘账号密码登录页（含风控短信验证流程）
@@ -116,8 +115,11 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
           }
           MiuixOverlayPanel.hide();
           setState(() => _submitting = true);
-          final err = await XunleiState.I
-              .loginWithCreditKey(account, password, key);
+          final err = await XunleiState.I.loginWithCreditKey(
+            account,
+            password,
+            key,
+          );
           if (!mounted) return;
           setState(() => _submitting = false);
           if (err == null) {
@@ -138,15 +140,6 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
     MiuixToast.show(msg);
   }
 
-  Future<void> _openWebLogin() async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => const WebLoginPage(provider: WebLoginProvider.xunlei),
-      ),
-    );
-    if (ok == true && mounted) Navigator.of(context).pop(true);
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = MiuixTheme.of(context).colors;
@@ -156,9 +149,10 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
         navigationIcon: MiuixIconButton(
           onPressed: () => Navigator.of(context).maybePop(),
           child: MiuixIcon(
-              icon: Icons.arrow_back_ios_new_rounded,
-              tint: colors.onSurfaceContainer,
-              size: 20),
+            icon: Icons.arrow_back_ios_new_rounded,
+            tint: colors.onSurfaceContainer,
+            size: 20,
+          ),
         ),
       ),
       content: (padding) => Padding(
@@ -178,8 +172,11 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
               label: '手机号 / 邮箱',
               useLabelAsPlaceholder: true,
               singleLine: true,
-              leadingIcon: MiuixIcon(icon: Icons.person_outline_rounded,
-                  tint: colors.onSurfaceSecondary, size: 20),
+              leadingIcon: MiuixIcon(
+                icon: Icons.person_outline_rounded,
+                tint: colors.onSurfaceSecondary,
+                size: 20,
+              ),
             ),
             const SizedBox(height: 14),
             MiuixTextField(
@@ -189,8 +186,11 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
               useLabelAsPlaceholder: true,
               singleLine: true,
               onSubmitted: (_) => _submit(),
-              leadingIcon: MiuixIcon(icon: Icons.lock_outline_rounded,
-                  tint: colors.onSurfaceSecondary, size: 20),
+              leadingIcon: MiuixIcon(
+                icon: Icons.lock_outline_rounded,
+                tint: colors.onSurfaceSecondary,
+                size: 20,
+              ),
               trailingIcon: MiuixIconButton(
                 onPressed: () => setState(() => _obscure = !_obscure),
                 child: MiuixIcon(
@@ -215,26 +215,15 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
                   ? const Padding(
                       padding: EdgeInsets.all(14),
                       child: MiuixCircularProgressIndicator(
-                          size: 16,
-                          colors: MiuixProgressIndicatorColors(
-                            foregroundColor: Colors.white,
-                            disabledForegroundColor: Colors.white,
-                            backgroundColor: Colors.white24,
-                          )),
+                        size: 16,
+                        colors: MiuixProgressIndicatorColors(
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: Colors.white,
+                          backgroundColor: Colors.white24,
+                        ),
+                      ),
                     )
                   : MiuixText('登录', color: Colors.white, fontSize: 15),
-            ),
-            const SizedBox(height: 14),
-            MiuixButton(
-              onPressed: _openWebLogin,
-              colors: MiuixButtonColors(
-                color: colors.primary,
-                disabledColor: colors.primary,
-                contentColor: Colors.white,
-                disabledContentColor: Colors.white,
-              ),
-              child: const MiuixText('网页登录',
-                  color: Colors.white, fontSize: 15),
             ),
             const SizedBox(height: 14),
             MiuixText(
@@ -297,8 +286,7 @@ class _ReviewKeyDialogState extends State<_ReviewKeyDialog> {
                 fontSize: 13,
               ),
               const SizedBox(height: 10),
-              MiuixText('① 打开下面的验证链接（在浏览器中完成短信/滑块验证）',
-                  fontSize: 13),
+              MiuixText('① 打开下面的验证链接（在浏览器中完成短信/滑块验证）', fontSize: 13),
               const SizedBox(height: 6),
               Container(
                 padding: const EdgeInsets.all(10),
@@ -312,28 +300,34 @@ class _ReviewKeyDialogState extends State<_ReviewKeyDialog> {
                       child: SelectableText(
                         widget.reviewUrl,
                         style: TextStyle(
-                            fontSize: 11,
-                            color: colors.primary,
-                            decoration: TextDecoration.none),
+                          fontSize: 11,
+                          color: colors.primary,
+                          decoration: TextDecoration.none,
+                        ),
                       ),
                     ),
                     MiuixIconButton(
                       onPressed: widget.onCopy,
-                      child: MiuixIcon(icon: Icons.copy_rounded,
-                          tint: colors.primary, size: 18),
+                      child: MiuixIcon(
+                        icon: Icons.copy_rounded,
+                        tint: colors.primary,
+                        size: 18,
+                      ),
                     ),
                     if (!kIsWeb && Platform.isWindows)
                       MiuixIconButton(
                         onPressed: widget.onOpenBrowser,
-                        child: MiuixIcon(icon: Icons.open_in_browser_rounded,
-                            tint: colors.primary, size: 18),
+                        child: MiuixIcon(
+                          icon: Icons.open_in_browser_rounded,
+                          tint: colors.primary,
+                          size: 18,
+                        ),
                       ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
-              MiuixText('② 验证完成后，复制页面显示的验证密钥（creditkey），粘贴到下面',
-                  fontSize: 13),
+              MiuixText('② 验证完成后，复制页面显示的验证密钥（creditkey），粘贴到下面', fontSize: 13),
               const SizedBox(height: 8),
               MiuixTextField(
                 controller: widget.controller,
