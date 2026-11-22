@@ -395,10 +395,12 @@ jobs:
           cat release/latest.json
           # GitHub API 偶发 403/5xx：发版动作重试 3 次，避免整条流水线白跑
           retry() {
-            for i in 1 2 3; do
+            delay=10
+            for i in 1 2 3 4 5; do
               if "$@"; then return 0; fi
-              echo "::warning::第 $i 次失败，5 秒后重试: $*"
-              sleep 5
+              echo "::warning::第 $i 次失败，${delay}s 后重试: $*"
+              sleep "$delay"
+              delay=$((delay * 2))
             done
             return 1
           }
