@@ -154,7 +154,7 @@ jobs:
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: quarklite-apk
+          name: fast-downloader-apk
           path: artifacts/apk/*.apk
           if-no-files-found: error
 
@@ -224,7 +224,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           # 直接上传目录：GitHub 只会包一层 zip，避免"两层压缩"
-          name: quarklite-windows
+          name: fast-downloader-windows
           path: build/windows/x64/runner/Release/
           if-no-files-found: error
 
@@ -240,13 +240,13 @@ jobs:
       - name: Download APK artifacts
         uses: actions/download-artifact@v4
         with:
-          name: quarklite-apk
+          name: fast-downloader-apk
           path: release/android
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: quarklite-windows
+          name: fast-downloader-windows
           path: release/windows
 
       - name: 打包 Windows 发布包（单层，无额外目录）
