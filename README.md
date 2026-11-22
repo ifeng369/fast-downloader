@@ -15,11 +15,11 @@
 
 ## 下载 APK
 
-在 GitHub Actions 页面打开最新的构建（workflow run），下载 **quarklite-apk** 工件：
+在 GitHub Actions 页面打开最新的构建（workflow run），下载 **fast-downloader-apk** 工件：
 
 1. 打开仓库的 [Actions](https://github.com/zxeb/quarklite/actions) 页面
 2. 点击最新一次成功的构建
-3. 在 Artifacts 区域下载 `quarklite-apk`
+3. 在 Artifacts 区域下载 `fast-downloader-apk`
 
 ## 工作原理
 

@@ -2,7 +2,7 @@
 #ifndef AppVersion
   #define AppVersion "1.3.0"
 #endif
-#define MyAppExeName "quarklite.exe"
+#define MyAppExeName "fast-downloader.exe"
 #define MyAppPublisher "QuarkLite"
 
 [Setup]
@@ -13,7 +13,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=..\build\installer
-OutputBaseFilename=quarklite-{#AppVersion}-setup
+OutputBaseFilename=fast-downloader-{#AppVersion}-setup
 SetupIconFile=..\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
