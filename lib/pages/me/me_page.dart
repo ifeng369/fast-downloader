@@ -17,6 +17,7 @@ import '../../utils/app_logger.dart';
 import '../../widgets/miuix_common.dart';
 import '../../widgets/netdisk_logo.dart';
 import '../../widgets/storage_capacity.dart';
+import '../uploads/uploads_page.dart';
 
 class MePage extends StatelessWidget {
   const MePage({super.key});
@@ -228,6 +229,16 @@ class MePage extends StatelessWidget {
               summary: _themeModeLabel(app.themeMode),
               icon: Icons.dark_mode_rounded,
               onClick: () => _editThemeMode(context, app)),
+          const MiuixHorizontalDivider(),
+          arrowPref(
+            title: '上传列表',
+            summary: UploadManager.I.hasActive
+                ? '${UploadManager.I.activeCount} 个上传进行中'
+                : '查看上传任务与历史',
+            icon: Icons.upload_rounded,
+            onClick: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const _UploadsRoutePage())),
+          ),
           const MiuixHorizontalDivider(),
           arrowPref(
             title: '下载目录',
@@ -581,6 +592,21 @@ class MePage extends StatelessWidget {
           '· 本项目基于 GPL-3.0 协议开源\n\n'
           'v1.3.2',
       confirmText: '关闭',
+    );
+  }
+}
+
+/// 「我的」→ 上传列表：以路由方式打开上传页（页面自带返回按钮）
+class _UploadsRoutePage extends StatelessWidget {
+  const _UploadsRoutePage();
+
+  @override
+  Widget build(BuildContext context) {
+    return MiuixScaffold(
+      content: (padding) => Padding(
+        padding: padding,
+        child: const UploadsPage(asRoute: true),
+      ),
     );
   }
 }

@@ -10,7 +10,6 @@ import 'pages/downloads/downloads_page.dart';
 import 'pages/drive/drive_hub_page.dart';
 import 'pages/me/me_page.dart';
 import 'pages/parse/parse_page.dart';
-import 'pages/uploads/uploads_page.dart';
 import 'state/app_state.dart';
 import 'state/download_manager.dart';
 import 'state/netdisk123_state.dart';
@@ -237,7 +236,6 @@ class _RootPageState extends State<RootPage> {
     ParsePage(),
     DriveHubPage(),
     DownloadsPage(),
-    UploadsPage(),
     MePage(),
   ];
 
@@ -333,6 +331,7 @@ class _MiuixBottomBar extends StatelessWidget {
   const _MiuixBottomBar({required this.index, required this.onTap});
 
   Widget _tabIcon(int i, IconData icon) {
+    // 上传已移到「我的」页：有上传任务时在「我的」上显示小红点
     if (i != 3) return MiuixIcon(icon: icon, size: 26);
     return ListenableBuilder(
       listenable: UploadManager.I,
@@ -357,7 +356,6 @@ class _MiuixBottomBar extends StatelessWidget {
       (Icons.link_rounded, '解析'),
       (Icons.folder_rounded, '网盘'),
       (Icons.download_rounded, '下载'),
-      (Icons.upload_rounded, '上传'),
       (Icons.person_outline_rounded, '我的'),
     ];
     return MiuixNavigationBar(

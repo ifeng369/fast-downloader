@@ -10,7 +10,10 @@ import '../../widgets/file_list_anim.dart';
 import '../../widgets/miuix_common.dart';
 
 class UploadsPage extends StatefulWidget {
-  const UploadsPage({super.key});
+  /// 作为独立路由（从「我的」进入）时，标题栏左侧显示返回按钮
+  final bool asRoute;
+
+  const UploadsPage({super.key, this.asRoute = false});
 
   @override
   State<UploadsPage> createState() => _UploadsPageState();
@@ -67,8 +70,16 @@ class _UploadsPageState extends State<UploadsPage>
                   padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
                   child: Row(
                     children: [
+                      if (widget.asRoute)
+                        MiuixIconButton(
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          child: MiuixIcon(
+                              icon: Icons.arrow_back_ios_new_rounded,
+                              tint: MiuixTheme.of(context).colors.onSurfaceContainer,
+                              size: 20),
+                        ),
                       MiuixText(_selectMode ? '批量操作' : '上传管理',
-                        fontSize: 24, fontWeight: FontWeight.w800),
+                        fontSize: widget.asRoute ? 20 : 24, fontWeight: FontWeight.w800),
                     const Spacer(),
                     if (_selectMode)
                       Row(
