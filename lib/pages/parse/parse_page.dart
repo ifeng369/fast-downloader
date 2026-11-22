@@ -303,14 +303,6 @@ class _ParsePageState extends State<ParsePage> {
   }
 
   @override
-  void dispose() {
-    _urlController.dispose();
-    _pwdController.dispose();
-    _btController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final colors = MiuixTheme.of(context).colors;
     final now = DateTime.now();
