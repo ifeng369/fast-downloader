@@ -282,20 +282,23 @@ jobs:
           TAG="v$VER"
           echo "Publishing $TAG"
           ls -lh release/android release/*.zip
+          # 下载完整性校验：SHA-256 清单随包发布（应用内/代理下载后可对比）
+          sha256sum release/android/*.apk release/*.zip | sed 's#release/##' > release/SHA256SUMS.txt
+          cat release/SHA256SUMS.txt
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release/android/* release/*.zip
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release/android/* release/*.zip release/SHA256SUMS.txt
           else
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "fast-downloader $TAG" \
               --generate-notes \
               --target "$GITHUB_SHA" \
-              release/android/* release/*.zip
+              release/android/* release/*.zip release/SHA256SUMS.txt
           fi
 
           # 清理不属于本次构建的旧资产：产物改过名（app-*.apk → quarklite-*.apk），
           # --clobber 只覆盖同名文件，旧名字会一直留在 Release 里，必须显式删除
-          EXPECTED=$( (cd release && ls android/*.apk *.zip 2>/dev/null) | xargs -r -n1 basename | sort || true)
+          EXPECTED=$( (cd release && ls android/*.apk *.zip SHA256SUMS.txt 2>/dev/null) | xargs -r -n1 basename | sort || true)
           if [ -n "$EXPECTED" ]; then
             gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
               -q '.assets[].name' | while read -r name; do
