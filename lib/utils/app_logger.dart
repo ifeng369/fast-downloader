@@ -16,24 +16,38 @@ class AppLogger {
   bool _ready = false;
   bool _initDone = false;
 
-  /// 初始化日志文件（失败时仅控制台输出，不影响主流程）
+  /// 初始化日志文件（失败时仅控制台输出，不影响主流程）。
+  /// 优先文档目录；文档目录不可写时回退到应用数据目录，避免"一条日志都没有"。
   Future<void> init() async {
     if (_initDone) return;
     _initDone = true;
+    final candidates = <String>[];
     try {
       final docs = await getApplicationDocumentsDirectory();
-      final dir = Directory('${docs.path}/quarklite/logs');
-      if (!dir.existsSync()) dir.createSync(recursive: true);
-      final f = File('${dir.path}/app.log');
-      if (f.existsSync() && f.lengthSync() > _maxBytes) {
-        final bytes = f.readAsBytesSync();
-        f.writeAsBytesSync(bytes.sublist(bytes.length - _keepBytes));
+      candidates.add('${docs.path}/quarklite/logs');
+    } catch (_) {}
+    try {
+      final support = await getApplicationSupportDirectory();
+      candidates.add('${support.path}/logs');
+    } catch (_) {}
+    for (final path in candidates) {
+      try {
+        final dir = Directory(path);
+        if (!dir.existsSync()) dir.createSync(recursive: true);
+        final f = File('${dir.path}/app.log');
+        if (f.existsSync() && f.lengthSync() > _maxBytes) {
+          final bytes = f.readAsBytesSync();
+          f.writeAsBytesSync(bytes.sublist(bytes.length - _keepBytes));
+        }
+        _file = f;
+        _ready = true;
+        _log('INFO', 'logger', '日志写入 $path');
+        return;
+      } catch (_) {
+        // 换下一个候选目录
       }
-      _file = f;
-      _ready = true;
-    } catch (_) {
-      _ready = false;
     }
+    _ready = false;
   }
 
   void i(String tag, String msg) => _log('INFO', tag, msg);
