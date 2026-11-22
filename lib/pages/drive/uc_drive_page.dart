@@ -177,9 +177,7 @@ class _UcDrivePageState extends State<UcDrivePage> {
     if (ok != true || !mounted) return;
     setState(() => _deleting = true);
     try {
-      await runWithBlockingProgress(context, '正在删除 $count 项…', () async {
-        await _client.deleteFiles(_selected.toList());
-      });
+      await _client.deleteFiles(_selected.toList());
       _toast('已移入回收站 $count 项');
       _exitSelectMode();
       await _load();
@@ -348,16 +346,34 @@ class _UcDrivePageState extends State<UcDrivePage> {
             MiuixText('已选 $count 项',
                 fontSize: 14, color: colors.onSurfaceContainer),
             const Spacer(),
-            MiuixTextButton(
-              '删除',
-              onPressed: _downloading || _deleting ? null : _deleteSelected,
-              colors: MiuixButtonColors(
-                color: Colors.redAccent,
-                disabledColor: Colors.redAccent,
-                contentColor: Colors.white,
-                disabledContentColor: Colors.white70,
+            if (_deleting)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    MiuixText('删除中…',
+                        fontSize: 13, color: colors.onSurfaceSecondary),
+                  ],
+                ),
+              )
+            else
+              MiuixTextButton(
+                '删除',
+                onPressed: _downloading ? null : _deleteSelected,
+                colors: MiuixButtonColors(
+                  color: Colors.redAccent,
+                  disabledColor: Colors.redAccent,
+                  contentColor: Colors.white,
+                  disabledContentColor: Colors.white70,
+                ),
               ),
-            ),
             const SizedBox(width: 8),
             MiuixButton(
               onPressed: _downloading || _deleting || count == 0 ? null : _batchDownload,

@@ -181,7 +181,11 @@ class _MiuixConfirmDialogState extends State<_MiuixConfirmDialog> {
   bool _closed = false;
 
   void _finish(bool ok) {
-    if (_closed) return;
+    if (_closed) {
+      // 兜底：重复点击时也要保证遮罩被移除，避免 overlay 残留导致整页点不动
+      MiuixOverlayPanel.hide();
+      return;
+    }
     _closed = true;
     widget.completer.complete(ok);
     MiuixOverlayPanel.hide();
@@ -595,51 +599,4 @@ Widget MiuixFilterTabs({
   );
 }
 
-/// 阻塞式进度弹窗：用于删除等不可中断的短任务。
-///
-/// 执行 [action] 期间显示不可取消的「进行中」弹窗（`PopScope` 禁返回），
-/// 结束后自动关闭；错误照常抛给调用方。
-Future<void> runWithBlockingProgress(
-  BuildContext context,
-  String text,
-  Future<void> Function() action,
-) async {
-  var open = true;
-  unawaited(showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (dialogContext) => PopScope(
-      canPop: false,
-      child: Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
-          decoration: BoxDecoration(
-            color: MiuixTheme.of(dialogContext).colors.surfaceContainer,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 26,
-                height: 26,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
-              ),
-              const SizedBox(height: 14),
-              MiuixText(text, fontSize: 14, textAlign: TextAlign.center),
-            ],
-          ),
-        ),
-      ),
-    ),
-  ).whenComplete(() => open = false));
-  try {
-    await action();
-  } finally {
-    if (open && context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-  }
-}
+/// 阻塞式进度弹窗已移除：删除进度改为选栏内联显示，避免与 MiuixOverlayPanel 遮罩混用。
