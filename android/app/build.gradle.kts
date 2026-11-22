@@ -41,6 +41,11 @@ android {
                 storePassword = keystoreProperties["storePassword"] as String
                 // 仓库内固定签名是 PKCS12；未显式指定时按传统 JKS 处理
                 storeType = (keystoreProperties["storeType"] as String?) ?: "JKS"
+                // Android 7 以下只认 v1(JAR) 签名；只签 v2 会被旧系统/部分国产安装器
+                // 报「没有开发者证书 / 无法收集证书」
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }

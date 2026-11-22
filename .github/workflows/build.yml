@@ -152,6 +152,13 @@ jobs:
             echo "::error::签名证书与仓库内 keystore 不一致（期望 $EXPECT），产物将无法覆盖安装旧版本"
             exit 1
           fi
+          # v1(JAR) 签名：旧系统与部分国产安装器只认 v1，缺了会报「没有开发者证书」
+          "$BT/apksigner" verify -v build/app/outputs/flutter-apk/app-release.apk | head -8
+          if ! unzip -l build/app/outputs/flutter-apk/app-release.apk \
+              | grep -qE 'META-INF/[^/]+\.(SF|RSA|DSA|EC)$'; then
+            echo "::error::APK 缺少 v1(JAR) 签名（META-INF/*.SF），旧系统/部分安装器会报「没有开发者证书」"
+            exit 1
+          fi
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
