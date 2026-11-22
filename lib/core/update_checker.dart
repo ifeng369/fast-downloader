@@ -1,19 +1,35 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../state/download_service.dart';
 import '../widgets/miuix_common.dart';
+
+/// 平台对应的安装包（Release asset）
+class UpdateAsset {
+  final String name;
+  final Uri url;
+
+  const UpdateAsset({required this.name, required this.url});
+}
 
 class AppUpdate {
   final String version;
   final Uri releaseUrl;
   final String notes;
 
+  /// 当前平台可用的安装包；没有匹配到时为 null（只能打开下载页）
+  final UpdateAsset? asset;
+
   const AppUpdate({
     required this.version,
     required this.releaseUrl,
     required this.notes,
+    this.asset,
   });
 }
 
@@ -51,10 +67,48 @@ class UpdateChecker {
         version: version,
         releaseUrl: url,
         notes: data['body']?.toString().trim() ?? '',
+        asset: pickAsset(data['assets']),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// GitHub 加速代理前缀（下载时拼在原始 URL 前面）
+  static const proxyPrefix = 'https://gh.ifeng369.top/';
+
+  /// 代理下载地址：https://gh.ifeng369.top/<原始 URL>
+  static Uri proxyUrl(Uri asset) => Uri.parse('$proxyPrefix${asset.toString()}');
+
+  /// 从 Release 的 assets 里挑出当前平台的安装包：
+  /// - Windows：`*.zip`（优先名字带 windows）
+  /// - Android：`*.apk`（优先 arm64-v8a）
+  static UpdateAsset? pickAsset(dynamic assets) {
+    final items = <UpdateAsset>[];
+    if (assets is List) {
+      for (final a in assets) {
+        if (a is! Map) continue;
+        final name = (a['name'] ?? '').toString();
+        final url = Uri.tryParse((a['browser_download_url'] ?? '').toString());
+        if (name.isEmpty || url == null || !url.hasScheme) continue;
+        items.add(UpdateAsset(name: name, url: url));
+      }
+    }
+    if (items.isEmpty || kIsWeb) return null;
+    String lower(UpdateAsset a) => a.name.toLowerCase();
+    if (Platform.isAndroid) {
+      final apks = items.where((a) => lower(a).endsWith('.apk')).toList();
+      if (apks.isEmpty) return null;
+      final arm64 = apks.where((a) => lower(a).contains('arm64')).toList();
+      return arm64.isNotEmpty ? arm64.first : apks.first;
+    }
+    if (Platform.isWindows) {
+      final zips = items.where((a) => lower(a).endsWith('.zip')).toList();
+      if (zips.isEmpty) return null;
+      final win = zips.where((a) => lower(a).contains('windows')).toList();
+      return win.isNotEmpty ? win.first : zips.first;
+    }
+    return null;
   }
 
   static const _skippedVersionKey = 'update_skipped_version';
@@ -71,22 +125,45 @@ class UpdateChecker {
     }
     if (!manual && await _isSkipped(update.version)) return;
     final notes = update.notes.isEmpty ? '' : '\n\n${update.notes}';
+    final asset = update.asset;
     final choice = await miuixChoiceDialog<String>(
       context,
       title: '发现新版本 ${update.version}',
-      options: const ['open', 'later', 'skip'],
-      current: 'later',
+      options: [
+        if (asset != null) 'direct',
+        if (asset != null) 'proxy',
+        'open',
+        'later',
+        'skip',
+      ],
+      current: asset != null ? 'direct' : 'open',
       labelOf: (value) => switch (value) {
+        'direct' => '直接下载（加入下载任务）',
+        'proxy' => '代理下载（gh.ifeng369.top 加速）',
         'open' => '打开 GitHub 下载页',
         'skip' => '此次更新不再提醒',
         _ => '稍后提醒',
       },
       hint: '当前版本 $currentVersion$notes',
     );
-    if (choice == 'skip') {
-      await _saveSkipped(update.version);
-    } else if (choice == 'open') {
-      await launchUrl(update.releaseUrl, mode: LaunchMode.externalApplication);
+    switch (choice) {
+      case 'skip':
+        await _saveSkipped(update.version);
+      case 'open':
+        await launchUrl(update.releaseUrl,
+            mode: LaunchMode.externalApplication);
+      case 'direct':
+      case 'proxy':
+        final target = update.asset;
+        if (target == null) return;
+        final url = choice == 'proxy' ? proxyUrl(target.url) : target.url;
+        final err = await DownloadService.addDirectUrl(
+          url: url.toString(),
+          fileName: target.name,
+          cookie: '',
+          referer: 'https://github.com/',
+        );
+        MiuixToast.show(err == null ? '已加入下载任务：${target.name}' : err);
     }
   }
 
