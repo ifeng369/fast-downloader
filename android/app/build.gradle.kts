@@ -30,6 +30,13 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // libgopeed.aar 自带 arm64-v8a / armeabi-v7a / x86_64 三种 libgojni.so，
+        // 不做过滤会把另外两种（压缩后约 30MB）一起塞进 arm64 包。
+        // CI 通过 ORG_GRADLE_PROJECT_targetAbi 注入；all_abis 模式下不设即保留全部。
+        val targetAbi = (project.findProperty("targetAbi") as String?)?.trim().orEmpty()
+        if (targetAbi.isNotEmpty()) {
+            ndk { abiFilters += targetAbi.split(",").map { it.trim() } }
+        }
     }
 
     signingConfigs {

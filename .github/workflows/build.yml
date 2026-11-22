@@ -108,7 +108,8 @@ jobs:
             flutter build apk --release --dart-define=APP_VERSION=${APP_VERSION%%+*} 2>&1 | tee -a build-android.log
             flutter build apk --release --split-per-abi --dart-define=APP_VERSION=${APP_VERSION%%+*} 2>&1 | tee -a build-android.log
           else
-            echo "== 仅构建 arm64-v8a（更快）"
+            echo "== 仅构建 arm64-v8a（更快，并把 AAR 里其余 ABI 的原生库滤掉）"
+            export ORG_GRADLE_PROJECT_targetAbi=arm64-v8a
             flutter build apk --release --target-platform android-arm64 --dart-define=APP_VERSION=${APP_VERSION%%+*} 2>&1 | tee -a build-android.log
           fi
 
@@ -158,6 +159,17 @@ jobs:
               | grep -qE 'META-INF/[^/]+\.(SF|RSA|DSA|EC)$'; then
             echo "::error::APK 缺少 v1(JAR) 签名（META-INF/*.SF），旧系统/部分安装器会报「没有开发者证书」"
             exit 1
+          fi
+          # 默认模式只保留 arm64 原生库：libgopeed.aar 自带三种 ABI，
+          # 漏过滤会让包体多出约 30MB（x86_64/armeabi-v7a 的 libgojni.so）
+          if [ "${{ inputs.all_abis }}" != "true" ]; then
+            BAD=$(unzip -l build/app/outputs/flutter-apk/app-release.apk \
+              | awk '{print $4}' | grep -E '^lib/' | cut -d/ -f2 | sort -u \
+              | grep -v '^arm64-v8a$' || true)
+            if [ -n "$BAD" ]; then
+              echo "::error::APK 混入非 arm64 原生库（约多 30MB）: $BAD"
+              exit 1
+            fi
           fi
 
       - name: Upload APK artifacts
@@ -265,7 +277,8 @@ jobs:
           cd release/windows
           python3 - <<'PY'
           import os, zipfile
-          with zipfile.ZipFile('../fast-downloader-windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+          with zipfile.ZipFile('../fast-downloader-windows-x64.zip', 'w', zipfile.ZIP_DEFLATED,
+                               compresslevel=9) as z:
               for root, _, files in os.walk('.'):
                   for f in files:
                       p = os.path.join(root, f)
