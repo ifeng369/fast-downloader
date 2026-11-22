@@ -218,13 +218,29 @@ class UpdateChecker {
       case 'proxy':
         final target = update.asset;
         if (target == null) return;
-        final url = choice == 'proxy' ? proxyUrl(target.url) : target.url;
-        final err = await DownloadService.addDirectUrl(
-          url: url.toString(),
+        final viaProxy = choice == 'proxy';
+        var err = await DownloadService.addDirectUrl(
+          url: (viaProxy ? proxyUrl(target.url) : target.url).toString(),
           fileName: target.name,
           cookie: '',
           referer: 'https://github.com/',
+          // gh 代理不实现 Range（Range 请求仍返回 200 全量），
+          // 多线程分块会失败 → 代理下载强制单连接
+          connections: viaProxy ? 1 : null,
+          maxConnections: viaProxy ? 1 : null,
         );
+        if (viaProxy && err != null) {
+          // 代理不可用/不稳定：自动回退直连
+          err = await DownloadService.addDirectUrl(
+            url: target.url.toString(),
+            fileName: target.name,
+            cookie: '',
+            referer: 'https://github.com/',
+          );
+          MiuixToast.show(
+              err == null ? '代理不可用，已改用直连下载：${target.name}' : err);
+          return;
+        }
         MiuixToast.show(err == null ? '已加入下载任务：${target.name}' : err);
     }
   }
