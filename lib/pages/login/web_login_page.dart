@@ -37,6 +37,12 @@ class _WebLoginPageState extends State<WebLoginPage> {
   bool _done = false;
   String _lastTried = '';
 
+  /// 页面缩放（登录页是桌面版，手机上偏小）
+  double _zoom = 1.0;
+  static const double _zoomMin = 0.6;
+  static const double _zoomMax = 3.0;
+  static const double _zoomStep = 0.2;
+
   bool get _isUc => widget.provider == WebLoginProvider.uc;
 
   String get _title => _isUc ? '登录 UC 网盘' : '登录夸克网盘';
@@ -88,8 +94,13 @@ class _WebLoginPageState extends State<WebLoginPage> {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setUserAgent(_ua)
+      // 允许双指缩放
+      ..enableZoom(true)
       ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) => _checkLogin(),
+        onPageFinished: (_) {
+          _applyZoom();
+          _checkLogin();
+        },
         onWebResourceError: (e) {
           if (e.isForMainFrame ?? true) {
             _setStatus('加载失败：${e.description}');
@@ -109,7 +120,12 @@ class _WebLoginPageState extends State<WebLoginPage> {
     try {
       await controller.initialize();
       await controller.setUserAgent(_ua);
+      await controller.setZoomFactor(_zoom);
       await controller.loadUrl(_loginUrl);
+      // 页面跳转后 WebView2 会重置缩放，这里跟随 url 变化重新应用
+      controller.url.listen((_) {
+        Future<void>.delayed(const Duration(milliseconds: 300), _applyZoom);
+      });
       if (!mounted) return;
       setState(() {
         _winController = controller;
@@ -118,6 +134,27 @@ class _WebLoginPageState extends State<WebLoginPage> {
     } catch (e) {
       _setStatus('打开登录页失败：$e');
     }
+  }
+
+  /// 应用当前缩放到页面
+  Future<void> _applyZoom() async {
+    if (kIsWeb) return;
+    try {
+      if (Platform.isWindows) {
+        await _winController?.setZoomFactor(_zoom);
+      } else if (Platform.isAndroid) {
+        // Android WebView 没有统一 zoomFactor，用 CSS zoom 控制（Chromium 支持）
+        await _androidController?.runJavaScript(
+            "document.body.style.zoom = '${_zoom.toStringAsFixed(2)}';");
+      }
+    } catch (_) {}
+  }
+
+  void _changeZoom(double delta) {
+    final next = (_zoom + delta).clamp(_zoomMin, _zoomMax);
+    if ((next - _zoom).abs() < 0.001) return;
+    setState(() => _zoom = next);
+    _applyZoom();
   }
 
   void _setStatus(String msg) {
@@ -207,6 +244,18 @@ class _WebLoginPageState extends State<WebLoginPage> {
               tint: colors.onSurfaceContainer,
               size: 20),
         ),
+        actions: [
+          MiuixIconButton(
+            onPressed: () => _changeZoom(-_zoomStep),
+            child: MiuixIcon(icon: Icons.zoom_out_rounded, tint: colors.primary),
+          ),
+          MiuixText('${(_zoom * 100).round()}%',
+              fontSize: 12, color: colors.onSurfaceSecondary),
+          MiuixIconButton(
+            onPressed: () => _changeZoom(_zoomStep),
+            child: MiuixIcon(icon: Icons.zoom_in_rounded, tint: colors.primary),
+          ),
+        ],
       ),
       content: (padding) => Padding(
         padding: padding,
