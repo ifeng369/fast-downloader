@@ -14,6 +14,8 @@ class XunleiState extends ChangeNotifier {
   static const _kRefresh = 'xunlei_refresh_token';
   static const _kUser = 'xunlei_user_id';
   static const _kUsername = 'xunlei_username';
+  static const _kDevice = 'xunlei_device_id';
+  static const _kClientId = 'xunlei_client_id';
 
   static XunleiState? _instance;
   static XunleiState get I => _instance ??= XunleiState._();
@@ -24,6 +26,9 @@ class XunleiState extends ChangeNotifier {
   );
 
   String? username; // 登录账号（手机号/邮箱），仅本机展示
+  /// 网页登录时使用的网页端 client_id（token 与它绑定，续期时必须带上）；
+  /// 账号密码登录为空，走 App 的 client_id/client_secret
+  String _authClientId = '';
   bool _ready = false;
   Timer? _refreshTimer;
 
@@ -49,21 +54,25 @@ class XunleiState extends ChangeNotifier {
       final access = await _read(_kAccess);
       final refresh = await _read(_kRefresh);
       final user = await _read(_kUser);
+      final savedDevice = await _read(_kDevice);
+      _authClientId = await _read(_kClientId);
       username = await _read(_kUsername);
-      // 设备 ID 与登录凭据绑定（对照 AList）：恢复登录态时用 refresh_token 派生
+      // 网页登录的设备 ID 必须原样复用；账号密码登录则按 refresh_token 派生
       client.setTokens(
           access: access,
           refresh: refresh,
           user: user,
-          device: refresh.isNotEmpty
-              ? XunleiClient.deviceIdFor(refresh)
-              : XunleiClient.deviceIdFor('$access$user'));
+          device: savedDevice.isNotEmpty
+              ? savedDevice
+              : (refresh.isNotEmpty
+                  ? XunleiClient.deviceIdFor(refresh)
+                  : XunleiClient.deviceIdFor('$access$user')));
       AppLogger.I.i('xunlei', '恢复登录态 access=${access.isNotEmpty} refresh=${refresh.isNotEmpty}');
       if (access.isNotEmpty && refresh.isNotEmpty) {
         // 后台续期验证
         unawaited(_autoRefresh());
       } else if (refresh.isNotEmpty) {
-        final err = await client.refresh();
+        final err = await _refreshTokens();
         if (err == null) {
           await _persist();
           notifyListeners();
@@ -75,8 +84,16 @@ class XunleiState extends ChangeNotifier {
     }
   }
 
+  /// 续期：网页登录的 token 必须用网页 client_id，否则会被拒绝
+  Future<String?> _refreshTokens() {
+    if (_authClientId.isNotEmpty) {
+      return client.refreshWith(clientId: _authClientId);
+    }
+    return client.refresh();
+  }
+
   Future<String?> _autoRefresh() async {
-    final err = await client.refresh();
+    final err = await _refreshTokens();
     if (err != null) {
       AppLogger.I.w('xunlei', '自动续期失败: $err');
       return err;
@@ -98,6 +115,7 @@ class XunleiState extends ChangeNotifier {
       return err;
     }
     username = normalized;
+    _authClientId = '';
     await _persist();
     _startRefresher();
     AppLogger.I.i('xunlei', '登录成功 user=${client.userId}');
@@ -145,6 +163,7 @@ class XunleiState extends ChangeNotifier {
       return err;
     }
     username = user.isNotEmpty ? user : username;
+    _authClientId = webClientId;
     await _persist();
     _startRefresher();
     AppLogger.I.i('xunlei', '网页登录成功 user=${client.userId}');
@@ -170,11 +189,19 @@ class XunleiState extends ChangeNotifier {
   Future<void> logout() async {
     client.setTokens();
     username = null;
+    _authClientId = '';
     _totalSize = -1;
     _usedSize = -1;
     _refreshTimer?.cancel();
     _refreshTimer = null;
-    for (final k in [_kAccess, _kRefresh, _kUser, _kUsername]) {
+    for (final k in [
+      _kAccess,
+      _kRefresh,
+      _kUser,
+      _kUsername,
+      _kDevice,
+      _kClientId
+    ]) {
       try {
         await _secure.delete(key: k);
       } catch (_) {}
@@ -216,6 +243,8 @@ class XunleiState extends ChangeNotifier {
 
   Future<void> _persist() async {
     await _write(_kAccess, client.accessToken);
+    await _write(_kDevice, client.deviceId);
+    await _write(_kClientId, _authClientId);
     await _write(_kRefresh, client.refreshToken);
     await _write(_kUser, client.userId);
     if (username != null) await _write(_kUsername, username!);
