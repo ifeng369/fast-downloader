@@ -4,6 +4,11 @@ on:
   push:
     branches: [main, feat/uc-drive]
   workflow_dispatch:
+    inputs:
+      all_abis:
+        description: '构建全部 ABI（armv7 / x86_64 / 通用包）；默认只出 arm64'
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.ref }}
@@ -54,10 +59,28 @@ jobs:
           restore-keys: |
             gopeed-
 
+      # gomobile bind 约 4-5 分钟：按 Gopeed 版本缓存 AAR，命中即跳过
+      - name: Restore libgopeed.aar
+        id: aar
+        uses: actions/cache@v4
+        with:
+          path: android/app/libs/libgopeed.aar
+          key: libgopeed-aar-${{ vars.GOPEED_VERSION || 'v1.9.3' }}
+
       - name: Build libgopeed.aar
+        if: steps.aar.outputs.cache-hit != 'true'
         run: bash scripts/build_libgopeed.sh
         env:
           GOPEED_VERSION: ${{ vars.GOPEED_VERSION || 'v1.9.3' }}
+
+      - name: Verify libgopeed.aar
+        shell: bash
+        run: |
+          test -f android/app/libs/libgopeed.aar || {
+            echo "::error::缺少 libgopeed.aar（缓存与构建都失败）"
+            exit 1
+          }
+          ls -lh android/app/libs/libgopeed.aar
 
       - name: Write key.properties（固定签名证书已入库）
         shell: bash
@@ -78,8 +101,30 @@ jobs:
         run: |
           set -o pipefail
           flutter pub get 2>&1 | tee build-android.log
-          flutter build apk --release 2>&1 | tee -a build-android.log
-          flutter build apk --release --split-per-abi 2>&1 | tee -a build-android.log
+          if [ "${{ inputs.all_abis }}" = "true" ]; then
+            echo "== 构建全部 ABI"
+            flutter build apk --release 2>&1 | tee -a build-android.log
+            flutter build apk --release --split-per-abi 2>&1 | tee -a build-android.log
+          else
+            echo "== 仅构建 arm64-v8a（更快）"
+            flutter build apk --release --target-platform android-arm64 2>&1 | tee -a build-android.log
+          fi
+
+      - name: 收集 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/apk
+          SRC=build/app/outputs/flutter-apk
+          if [ "${{ inputs.all_abis }}" = "true" ]; then
+            cp "$SRC/app-release.apk" artifacts/apk/quarklite-universal.apk
+            cp "$SRC/app-arm64-v8a-release.apk" artifacts/apk/
+            cp "$SRC/app-armeabi-v7a-release.apk" artifacts/apk/
+            cp "$SRC/app-x86_64-release.apk" artifacts/apk/
+          else
+            cp "$SRC/app-release.apk" artifacts/apk/quarklite-arm64-v8a.apk
+          fi
+          ls -lh artifacts/apk
 
       - name: 失败时贴出构建日志
         if: failure()
@@ -110,11 +155,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: quarklite-apk
-          path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          path: artifacts/apk/*.apk
           if-no-files-found: error
 
   build-windows:
