@@ -48,7 +48,7 @@ class UpdateChecker {
   /// 本地直接运行时回退到下方默认值（需与 pubspec.yaml 的 version 保持一致）
   static const currentVersion = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '1.3.15',
+    defaultValue: '1.3.16',
   );
 
   static const repo = 'ifeng369/fast-downloader';
