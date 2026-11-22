@@ -76,7 +76,8 @@ class _WebLoginPageState extends State<WebLoginPage> {
         WebLoginProvider.quark => 'https://pan.quark.cn/',
         WebLoginProvider.uc => 'https://drive.uc.cn/',
         WebLoginProvider.xunlei => 'https://pan.xunlei.com/login/',
-        WebLoginProvider.netdisk123 => 'https://www.123pan.com/',
+        // 123 的账号中心登录页（登录成功后写 cookie sso-token，等价于 authorToken）
+        WebLoginProvider.netdisk123 => 'https://user.123pan.cn/centerlogin',
       };
 
   /// 登录态 cookie 名（夸克/UC 都是 Alibaba 系，均用 __pus）
@@ -94,6 +95,7 @@ class _WebLoginPageState extends State<WebLoginPage> {
             'https://xluser-ssl.xunlei.com'
           ],
         WebLoginProvider.netdisk123 => [
+            'https://user.123pan.cn',
             'https://www.123pan.com',
             'https://api.123278.com'
           ],
@@ -103,7 +105,7 @@ class _WebLoginPageState extends State<WebLoginPage> {
         WebLoginProvider.uc => ['uc.cn'],
         WebLoginProvider.quark => ['quark.cn'],
         WebLoginProvider.xunlei => ['xunlei.com'],
-        WebLoginProvider.netdisk123 => ['123pan.com', '123278.com'],
+        WebLoginProvider.netdisk123 => ['123pan.cn', '123pan.com', '123278.com'],
       };
 
   /// 在页面里读 token：
@@ -227,6 +229,27 @@ class _WebLoginPageState extends State<WebLoginPage> {
     setState(() => _status = msg);
   }
 
+  /// 读当前页面可用的登录凭据（JSON 字符串）；没有可用凭据时返回空串。
+  /// - 迅雷：localStorage `credentials_*` 里的 access/refresh
+  /// - 123：localStorage `authorToken`，登录中心(user.123pan.cn)回退到 cookie `sso-token`
+  Future<String> _readCredential() async {
+    final map = <String, dynamic>{..._decode(await _readStorage())};
+    if (_isXunlei) {
+      if ((map['access'] ?? '').toString().isEmpty) return '';
+      return jsonEncode(map);
+    }
+    if (_isPan123) {
+      if ((map['token'] ?? '').toString().isEmpty) {
+        // 登录中心只把 token 写进 cookie；www 页面才会回填 localStorage.authorToken
+        final sso = _cookieValue(await _readCookieHeader(), 'sso-token');
+        if (sso.isNotEmpty) map['token'] = sso;
+      }
+      if ((map['token'] ?? '').toString().isEmpty) return '';
+      return jsonEncode(map);
+    }
+    return '';
+  }
+
   /// 在页面里读 token（迅雷/123），返回页面脚本给出的 JSON 字符串
   Future<String> _readStorage() async {
     if (_useCookie) return '';
@@ -303,10 +326,10 @@ class _WebLoginPageState extends State<WebLoginPage> {
         _lastTried = header;
         await _submit(header);
       } else {
-        final storage = await _readStorage();
-        if (storage.isEmpty || storage == '{}' || storage == _lastTried) return;
-        _lastTried = storage;
-        await _submit(storage);
+        final cred = await _readCredential();
+        if (cred.isEmpty || cred == _lastTried) return;
+        _lastTried = cred;
+        await _submit(cred);
       }
     } catch (_) {}
   }
