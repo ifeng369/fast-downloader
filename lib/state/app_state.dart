@@ -20,6 +20,7 @@ class AppState extends ChangeNotifier {
   static const _kDownloadDir = 'download_dir';
   static const _kConnections = 'connections';
   static const _kXunleiConnections = 'xunlei_connections';
+  static const _kUcConnections = 'uc_connections';
   static const _kNetdisk123Connections = 'netdisk123_connections';
   static const _kMaxRunning = 'max_running';
   static const _kConnectionBudget = 'connection_budget';
@@ -51,6 +52,9 @@ class AppState extends ChangeNotifier {
 
   /// 迅雷云盘单任务最大线程数（默认 64，迅雷直链单连接限速档位更高，64 线程足够拉满）
   int xunleiConnections = 64;
+
+  /// UC 网盘单任务最大线程数（默认 64；登录态单连接约 500KB/s，游客约 100KB/s）
+  int ucConnections = 64;
 
   /// 123 网盘单任务最大线程数（默认 128，直链为临时 CDN 链接，多线程拉满）
   int netdisk123Connections = 128;
@@ -164,6 +168,7 @@ class AppState extends ChangeNotifier {
         : await _platformDefaultDownloadDir();
     connections = prefs.getInt(_kConnections) ?? 512;
     xunleiConnections = prefs.getInt(_kXunleiConnections) ?? 64;
+    ucConnections = prefs.getInt(_kUcConnections) ?? 64;
     netdisk123Connections = prefs.getInt(_kNetdisk123Connections) ?? 128;
     maxRunning = prefs.getInt(_kMaxRunning) ?? 4;
     connectionBudget = prefs.getInt(_kConnectionBudget) ?? 256;
@@ -233,6 +238,13 @@ class AppState extends ChangeNotifier {
     xunleiConnections = n;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kXunleiConnections, n);
+    notifyListeners();
+  }
+
+  Future<void> setUcConnections(int n) async {
+    ucConnections = n;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kUcConnections, n);
     notifyListeners();
   }
 

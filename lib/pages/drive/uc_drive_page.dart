@@ -217,6 +217,7 @@ class _UcDrivePageState extends State<UcDrivePage> {
           path: path,
           cookie: cookie,
           batchTotal: total,
+          maxConnections: app.ucConnections,
           referer: UcClient.referer,
           userAgent: UcClient.uaPc,
         );
@@ -493,6 +494,7 @@ class _UcDrivePageState extends State<UcDrivePage> {
         cookie: cookie,
         path: base,
         batchTotal: 1,
+        maxConnections: AppState.I.ucConnections,
         referer: UcClient.referer,
         userAgent: UcClient.uaPc,
       );

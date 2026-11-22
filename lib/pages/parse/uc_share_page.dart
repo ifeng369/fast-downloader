@@ -184,7 +184,8 @@ class _UcSharePageState extends State<UcSharePage> {
 
   /// 分批取分享直链并加入下载队列（每批 50 个）
   Future<int> _downloadFileList(List<(UcShareFile, String)> items) async {
-    final base = await AppState.I.effectiveDownloadDir();
+    final app = AppState.I;
+    final base = await app.effectiveDownloadDir();
     var added = 0;
     const batchSize = 50;
     final total = items.length;
@@ -205,6 +206,7 @@ class _UcSharePageState extends State<UcSharePage> {
           path: path,
           cookie: cookie,
           batchTotal: total,
+          maxConnections: app.ucConnections,
           referer: UcClient.referer,
           userAgent: UcClient.uaPc,
         );
@@ -229,6 +231,7 @@ class _UcSharePageState extends State<UcSharePage> {
         cookie: cookie,
         path: base,
         batchTotal: 1,
+        maxConnections: AppState.I.ucConnections,
         referer: UcClient.referer,
         userAgent: UcClient.uaPc,
       );

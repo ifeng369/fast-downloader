@@ -266,6 +266,12 @@ class MePage extends StatelessWidget {
                 summary: '单任务最大 ${app.netdisk123Connections} 线程',
                 icon: Icons.cloud_upload_rounded,
                 onClick: () => _editNetdisk123Connections(context, app)),
+            const MiuixHorizontalDivider(),
+            arrowPref(
+                title: 'UC 下载线程',
+                summary: '单任务最大 ${app.ucConnections} 线程',
+                icon: Icons.cloud_done_rounded,
+                onClick: () => _editUcConnections(context, app)),
           ],
           const MiuixHorizontalDivider(),
           arrowPref(
@@ -459,6 +465,19 @@ class MePage extends StatelessWidget {
       current: app.netdisk123Connections,
       unit: '线程',
       onPick: (n) => app.setNetdisk123Connections(n),
+    );
+  }
+
+  void _editUcConnections(BuildContext context, AppState app) {
+    // 登录态单连接约 500KB/s，64 线程已能拉满多数家宽；游客 100KB/s 时可调到 128/256
+    final options = [16, 32, 64, 128, 256];
+    _showThreadPicker(
+      context,
+      title: 'UC 下载线程',
+      options: options,
+      current: app.ucConnections,
+      unit: '线程',
+      onPick: (n) => app.setUcConnections(n),
     );
   }
 
