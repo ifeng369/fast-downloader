@@ -476,6 +476,9 @@ class _DownloadsPageState extends State<DownloadsPage>
     final paused = task.status == GopeedStatus.pause;
     final isApk = done && task.name.toLowerCase().endsWith('.apk');
     final actions = <({IconData icon, String text, String value, Color? color})>[
+      if (!kIsWeb &&
+          (Platform.isWindows || Platform.isMacOS || Platform.isLinux))
+        (icon: Icons.folder_open_rounded, text: '打开文件夹', value: 'folder', color: null),
       if (isApk)
         (icon: Icons.android_rounded, text: '安装 APK', value: 'install', color: null),
       if (!done && !failed && !paused)
@@ -489,6 +492,8 @@ class _DownloadsPageState extends State<DownloadsPage>
         .then((v) async {
       if (v == null) return;
       switch (v) {
+        case 'folder':
+          await _openFolder(task);
         case 'install':
           await _installApk(task);
         case 'pause':
@@ -501,6 +506,34 @@ class _DownloadsPageState extends State<DownloadsPage>
           await _confirmDelete(task, deleteFile: true);
       }
     });
+  }
+
+  /// 在系统文件管理器里打开任务所在目录（Windows 会选中该文件）
+  Future<void> _openFolder(GopeedTask task) async {
+    final path = task.filePath;
+    if (path.isEmpty) {
+      _toast('找不到文件路径，请在下载目录里手动查看');
+      return;
+    }
+    var exists = false;
+    try {
+      exists = await File(path).exists();
+    } catch (_) {}
+    final dir = exists ? File(path).parent.path : path;
+    try {
+      if (Platform.isWindows) {
+        await Process.start(
+            'explorer.exe', exists ? ['/select,', path] : [dir]);
+      } else if (Platform.isMacOS) {
+        await Process.start('open', exists ? ['-R', path] : [dir]);
+      } else if (Platform.isLinux) {
+        await Process.start('xdg-open', [dir]);
+      } else {
+        _toast('当前平台不支持打开文件夹');
+      }
+    } catch (e) {
+      _toast('打开文件夹失败: $e');
+    }
   }
 
   /// 已完成的 APK 交给系统安装器；首次会跳转「安装未知应用」授权页
