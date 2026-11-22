@@ -20,15 +20,20 @@ class AppUpdate {
 class UpdateChecker {
   UpdateChecker._();
 
-  static const currentVersion = '1.3.2';
+  /// 版本号：优先由构建注入（CI 用 --dart-define=APP_VERSION=1.3.3），
+  /// 本地直接运行时回退到下方默认值（需与 pubspec.yaml 的 version 保持一致）
+  static const currentVersion =
+      String.fromEnvironment('APP_VERSION', defaultValue: '1.3.3');
+
+  /// 自动更新检查指向本项目（fork）的 Release
   static const _latestReleaseUrl =
-      'https://api.github.com/repos/ZXEB/quarklite/releases/latest';
+      'https://api.github.com/repos/ifeng369/fast-downloader/releases/latest';
   static final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 8),
     receiveTimeout: const Duration(seconds: 8),
     headers: const {
       'Accept': 'application/vnd.github+json',
-      'User-Agent': 'Quarklite-update-checker',
+      'User-Agent': 'fast-downloader-update-checker',
     },
   ));
 

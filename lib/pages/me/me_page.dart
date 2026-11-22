@@ -395,7 +395,7 @@ class MePage extends StatelessWidget {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
           MiuixArrowPreference(title: '日志', summary: '查看/复制运行日志，排查下载问题', startAction: leading(Icons.bug_report_rounded), insideMargin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), onClick: () => _showLog(context)),
           const MiuixHorizontalDivider(),
-          MiuixArrowPreference(title: '关于', summary: !kIsWeb && Platform.isIOS ? 'fast-downloader v1.3.2  ·  iOS 原生后台下载器' : 'fast-downloader v1.3.2  ·  基于 Gopeed 下载引擎', startAction: leading(Icons.info_outline_rounded), insideMargin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), onClick: () => _showAbout(context)),
+          MiuixArrowPreference(title: '关于', summary: !kIsWeb && Platform.isIOS ? 'fast-downloader v${UpdateChecker.currentVersion}  ·  iOS 原生后台下载器' : 'fast-downloader v${UpdateChecker.currentVersion}  ·  基于 Gopeed 下载引擎', startAction: leading(Icons.info_outline_rounded), insideMargin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), onClick: () => _showAbout(context)),
         ]),
     );
   }
@@ -590,7 +590,7 @@ class MePage extends StatelessWidget {
           '· $capabilityText\n'
           '· $platformText\n'
           '· 本项目基于 GPL-3.0 协议开源\n\n'
-          'v1.3.2',
+          'v${UpdateChecker.currentVersion}',
       confirmText: '关闭',
     );
   }
