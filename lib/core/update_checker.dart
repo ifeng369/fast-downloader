@@ -23,7 +23,7 @@ class UpdateChecker {
   /// 版本号：优先由构建注入（CI 用 --dart-define=APP_VERSION=1.3.3），
   /// 本地直接运行时回退到下方默认值（需与 pubspec.yaml 的 version 保持一致）
   static const currentVersion =
-      String.fromEnvironment('APP_VERSION', defaultValue: '1.3.4');
+      String.fromEnvironment('APP_VERSION', defaultValue: '1.3.5');
 
   /// 自动更新检查指向本项目（fork）的 Release
   static const _latestReleaseUrl =
