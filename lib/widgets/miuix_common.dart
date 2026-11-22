@@ -47,9 +47,16 @@ class MiuixOverlayPanel {
   static Future<void> show({
     required BuildContext context,
     required Widget Function(BuildContext dialogContext) builder,
-  }) async {
+  }) {
+    return showInOverlay(Overlay.of(context, rootOverlay: true), builder);
+  }
+
+  /// 没有可用页面 context 时（如原生窗口关闭回调），直接挂在 Navigator 的 Overlay 上。
+  static Future<void> showInOverlay(
+    OverlayState overlay,
+    Widget Function(BuildContext dialogContext) builder,
+  ) async {
     await _dismissActive();
-    final overlay = Overlay.of(context, rootOverlay: true);
     final completer = Completer<void>();
     final registry = MiuixPopupRegistry();
     late OverlayEntry entry;

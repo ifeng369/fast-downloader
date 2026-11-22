@@ -6,6 +6,7 @@ import 'package:flutter_miuix/miuix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../widgets/miuix_common.dart';
+import 'app_logger.dart';
 
 /// Windows 窗口关闭行为管理：
 /// 关闭窗口时按用户设置决定「最小化到任务栏（后台继续下载）」还是「退出」。
@@ -64,26 +65,34 @@ class WindowCloseHandler {
   }
 
   static Future<void> _askAndRun({required bool remember}) async {
-    final ctx = navigatorKey?.currentContext;
-    if (ctx == null) {
+    // navigatorKey.currentContext 在 Overlay 之上，Overlay.of 找不到宿主，
+    // 必须直接拿 Navigator 的 Overlay。
+    final overlay = navigatorKey?.currentState?.overlay;
+    if (overlay == null) {
       // 界面未就绪时兜底最小化
       await minimize();
       return;
     }
     final completer = Completer<String>();
-    await MiuixOverlayPanel.show(
-      context: ctx,
-      builder: (_) => _CloseChoiceDialog(
-        onExit: () {
-          completer.complete('exit');
-          MiuixOverlayPanel.hide();
-        },
-        onMinimize: () {
-          completer.complete('minimize');
-          MiuixOverlayPanel.hide();
-        },
-      ),
-    );
+    try {
+      await MiuixOverlayPanel.showInOverlay(
+        overlay,
+        (_) => _CloseChoiceDialog(
+          onExit: () {
+            completer.complete('exit');
+            MiuixOverlayPanel.hide();
+          },
+          onMinimize: () {
+            completer.complete('minimize');
+            MiuixOverlayPanel.hide();
+          },
+        ),
+      );
+    } catch (e) {
+      AppLogger.I.w('window', '关闭确认框显示失败，改为最小化: $e');
+      await minimize();
+      return;
+    }
     final action = await completer.future;
     if (remember) {
       // 首次选择后记住，下次直接按此行为执行
