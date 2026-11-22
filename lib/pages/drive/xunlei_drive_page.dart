@@ -158,10 +158,13 @@ class _XunleiDrivePageState extends State<XunleiDrivePage> {
       confirmText: '删除',
       danger: true,
     );
-    if (ok != true) return;
+    // 确认弹窗是异步的，回来后再用 context 需要 mounted 校验
+    if (ok != true || !mounted) return;
     setState(() => _deleting = true);
     try {
-      await _client.deleteFiles(_selected.toList(), space: _space);
+      await runWithBlockingProgress(context, '正在删除 $count 项…', () async {
+        await _client.deleteFiles(_selected.toList(), space: _space);
+      });
       _toast('已移入回收站 $count 项');
       _exitSelectMode();
       await _load();
@@ -332,7 +335,7 @@ class _XunleiDrivePageState extends State<XunleiDrivePage> {
             const Spacer(),
             MiuixTextButton(
               '删除',
-              onPressed: _deleteSelected,
+              onPressed: _downloading || _deleting ? null : _deleteSelected,
               colors: MiuixButtonColors(
                 color: Colors.redAccent,
                 disabledColor: Colors.redAccent,
@@ -342,7 +345,7 @@ class _XunleiDrivePageState extends State<XunleiDrivePage> {
             ),
             const SizedBox(width: 8),
             MiuixButton(
-              onPressed: _downloading || count == 0 ? null : _batchDownload,
+              onPressed: _downloading || _deleting || count == 0 ? null : _batchDownload,
               colors: MiuixButtonColors(
                 color: colors.primary,
                 disabledColor: colors.primaryVariant,
