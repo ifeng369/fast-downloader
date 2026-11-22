@@ -12,6 +12,8 @@ concurrency:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # 失败时把构建日志贴到 commit comment，便于排查
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,22 +59,36 @@ jobs:
       - name: Write key.properties（固定签名证书已入库）
         shell: bash
         run: |
-          test -f android/app/upload-keystore.p12 || {
-            echo "::error::缺少 android/app/upload-keystore.p12，签名无法固定"
+          test -f android/app/upload-keystore.jks || {
+            echo "::error::缺少 android/app/upload-keystore.jks，签名无法固定"
             exit 1
           }
           printf '%s\n' \
-            "storeFile=upload-keystore.p12" \
-            "storeType=PKCS12" \
+            "storeFile=upload-keystore.jks" \
+            "storeType=JKS" \
             "storePassword=quarklite2026" \
             "keyAlias=quarklite" \
             "keyPassword=quarklite2026" > android/key.properties
 
       - name: Build release APK
+        shell: bash
         run: |
-          flutter pub get
-          flutter build apk --release
-          flutter build apk --release --split-per-abi
+          set -o pipefail
+          flutter pub get 2>&1 | tee build-android.log
+          flutter build apk --release 2>&1 | tee -a build-android.log
+          flutter build apk --release --split-per-abi 2>&1 | tee -a build-android.log
+
+      - name: 失败时贴出构建日志
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if [ -f build-android.log ]; then
+            { echo '```'; tail -n 150 build-android.log; echo '```'; } > "$RUNNER_TEMP/body.md"
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -F body=@"$RUNNER_TEMP/body.md" || true
+          fi
 
       - name: 校验签名证书
         shell: bash

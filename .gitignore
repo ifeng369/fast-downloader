@@ -45,7 +45,7 @@ app.*.map.json
 /android/app/release
 
 # Signing (generated in CI)
-android/app/upload-keystore.jks
+# android/app/upload-keystore.jks —— 固定签名证书，例外入库（见 android/.gitignore）
 android/key.properties
 
 # Local build logs / helper scripts

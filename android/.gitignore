@@ -12,3 +12,5 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+# 固定签名证书：唯一例外，必须入库（CI 用它签名，保证升级可覆盖安装）
+!app/upload-keystore.jks
