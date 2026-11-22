@@ -177,6 +177,7 @@ jobs:
               --ks-pass "pass:$KS_PASS" --key-pass "pass:$KEY_PASS" \
               --ks-key-alias "$KEY_ALIAS" \
               --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+              --min-sdk-version 21 \
               --out "$APK.aligned.signed" "$APK.aligned"
             mv "$APK.aligned.signed" "$APK"
             rm -f "$APK.aligned"
@@ -225,7 +226,8 @@ jobs:
           fi
           # v1(JAR) 签名：旧系统与部分国产安装器只认 v1，缺了会报「没有开发者证书」
           # 注意：不能只看 META-INF/*.SF（依赖也可能自带），必须由 apksigner 判定有效性
-          VERIFY=$("$BT/apksigner" verify -v build/app/outputs/flutter-apk/app-release.apk)
+          # minSdk=24 的包 apksigner 默认不校验 v1，必须显式 --min-sdk-version
+          VERIFY=$("$BT/apksigner" verify --min-sdk-version 21 -v build/app/outputs/flutter-apk/app-release.apk)
           echo "$VERIFY" | grep -E 'Verified using v[123] scheme|Number of signers'
           if ! echo "$VERIFY" | grep -q 'Verified using v1 scheme (JAR signing): true'; then
             echo "::error::APK 的 v1(JAR) 签名无效，旧系统/部分安装器会报「没有开发者证书」"
