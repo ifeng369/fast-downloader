@@ -285,10 +285,19 @@ jobs:
           # 下载完整性校验：SHA-256 清单随包发布（应用内/代理下载后可对比）
           sha256sum release/android/*.apk release/*.zip | sed 's#release/##' > release/SHA256SUMS.txt
           cat release/SHA256SUMS.txt
+          # GitHub API 偶发 403/5xx：发版动作重试 3 次，避免整条流水线白跑
+          retry() {
+            for i in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "::warning::第 $i 次失败，5 秒后重试: $*"
+              sleep 5
+            done
+            return 1
+          }
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release/android/* release/*.zip release/SHA256SUMS.txt
+            retry gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release/android/* release/*.zip release/SHA256SUMS.txt
           else
-            gh release create "$TAG" \
+            retry gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "fast-downloader $TAG" \
               --generate-notes \
