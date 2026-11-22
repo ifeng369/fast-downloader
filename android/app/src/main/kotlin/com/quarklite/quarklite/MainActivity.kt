@@ -95,10 +95,12 @@ open class MainActivity : FlutterActivity() {
                     }
                     "clearCookies" -> {
                         try {
-                            CookieManager.getInstance().removeAllCookies(null)
-                            CookieManager.getInstance().flush()
-                            WebStorage.getInstance().deleteAllData()
-                            result.success(null)
+                            val cm = CookieManager.getInstance()
+                            cm.removeAllCookies {
+                                cm.flush()
+                                WebStorage.getInstance().deleteAllData()
+                                result.success(null)
+                            }
                         } catch (e: Exception) {
                             result.error("ERROR", e.message, null)
                         }

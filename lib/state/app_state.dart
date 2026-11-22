@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,7 +13,7 @@ import '../core/gopeed/gopeed_boot.dart';
 import '../core/web_cookies.dart';
 
 class AppState extends ChangeNotifier {
-  static const _sysChannel = MethodChannel('quarklite.com/system');
+  static const _sysChannel = WebCookies.channel;
   static const _kCookie = 'quark_cookie';
   static const _kCookieBackup = 'quark_cookie_backup';
   static const _kUserCache = 'quark_user_cache';

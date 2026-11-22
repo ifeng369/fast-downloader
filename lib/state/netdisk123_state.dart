@@ -310,10 +310,12 @@ class Netdisk123State extends ChangeNotifier {
     final a = active;
     if (a == null) {
       client.clear();
+      await WebCookies.clear();
       notifyListeners();
       return;
     }
     await removeAccount(a.id);
+    await WebCookies.clear();
   }
 
   /// PC 网页登录：校验网页里拿到的 token 后写入登录态

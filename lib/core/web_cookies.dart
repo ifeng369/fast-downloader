@@ -13,7 +13,10 @@ import '../utils/app_logger.dart';
 class WebCookies {
   WebCookies._();
 
-  static const _channel = MethodChannel('com.quarklite.quarklite/sys');
+  /// 与 Android 原生 MainActivity 注册的通道保持一致（quarklite.com/system）
+  static const channelName = 'quarklite.com/system';
+
+  static const channel = MethodChannel(channelName);
 
   /// Windows 的 WebView2 cookie 只能通过 controller 清；
   /// 网页登录页关闭时把 controller 交给这里持有，退出登录时清完再释放。
@@ -31,22 +34,41 @@ class WebCookies {
     if (kIsWeb) return;
     try {
       if (Platform.isAndroid) {
-        // 原生侧：CookieManager.removeAllCookies + WebStorage.deleteAllData
-        await _channel.invokeMethod('clearCookies');
+        // 原生侧：CookieManager.removeAllCookies + flush + WebStorage.deleteAllData
+        await channel
+            .invokeMethod('clearCookies')
+            .timeout(const Duration(seconds: 3));
+        AppLogger.I.i('web', '已清理 WebView 登录态（Android）');
       } else if (Platform.isWindows) {
-        final controller = _retained;
-        if (controller == null) return;
+        final retained = _retained;
         _retained = null;
+        if (retained != null) {
+          await _clearWith(retained);
+          AppLogger.I.i('web', '已清理 WebView 登录态（Windows，复用 controller）');
+          return;
+        }
+        // 登录页在本进程里没打开过（例如重启后再退出）：临时建一个 controller
+        // 清掉 WebView2 profile 里持久化的 cookie，否则下次网页登录仍会自动登录。
+        final controller = WebviewController();
         try {
-          await controller.clearCookies();
-        } catch (_) {}
-        try {
-          await controller.clearCache();
-        } catch (_) {}
-        await controller.dispose().catchError((Object _) {});
+          await controller.initialize();
+          await _clearWith(controller);
+          AppLogger.I.i('web', '已清理 WebView 登录态（Windows，临时 controller）');
+        } finally {
+          await controller.dispose().catchError((Object _) {});
+        }
       }
     } catch (e) {
       AppLogger.I.w('web', '清理 WebView 登录态失败: $e');
     }
+  }
+
+  static Future<void> _clearWith(WebviewController controller) async {
+    try {
+      await controller.clearCookies();
+    } catch (_) {}
+    try {
+      await controller.clearCache();
+    } catch (_) {}
   }
 }
