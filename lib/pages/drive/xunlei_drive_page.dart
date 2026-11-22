@@ -161,7 +161,7 @@ class _XunleiDrivePageState extends State<XunleiDrivePage> {
     if (ok != true) return;
     setState(() => _deleting = true);
     try {
-      await _client.deleteFiles(_selected.toList());
+      await _client.deleteFiles(_selected.toList(), space: _space);
       _toast('已移入回收站 $count 项');
       _exitSelectMode();
       await _load();

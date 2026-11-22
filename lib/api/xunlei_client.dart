@@ -446,10 +446,16 @@ class XunleiClient {
   }
 
   /// 删除到回收站（`PATCH /files/{id}/trash`，逐个提交；token 失效自动续期重试）
-  Future<void> deleteFiles(List<String> ids) async {
+  ///
+  /// 两个必须点（实测）：**带空 JSON body** 且 **带 `?space=` 查询参数**，
+  /// 否则服务端会以"文件(夹)不存在"拒绝。
+  Future<void> deleteFiles(List<String> ids,
+      {String space = rootSpace}) async {
     for (final id in ids) {
       Future<Map<String, dynamic>> call() async => _parse(
           await _dio.request<dynamic>('$_driveBase/files/$id/trash',
+              data: const <String, dynamic>{},
+              queryParameters: {'space': space},
               options: Options(
                   method: 'PATCH',
                   headers: _authHeaders(),
