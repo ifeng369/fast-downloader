@@ -61,19 +61,45 @@ jobs:
           restore-keys: |
             gopeed-
 
-      # gomobile bind 约 4-5 分钟：按 Gopeed 版本缓存 AAR，命中即跳过
+      # 只编需要发布的 ABI：gomobile bind -target=android 默认编 4 个 ABI，
+      # 每个都要跑一遍 Go 编译，只发 arm64 时纯属浪费（约省一半时间）
+      - name: Resolve ABI targets
+        id: abi
+        shell: bash
+        run: |
+          if [ "${{ inputs.all_abis }}" = "true" ]; then
+            echo "targets=android" >> "$GITHUB_OUTPUT"
+            echo "slug=all" >> "$GITHUB_OUTPUT"
+          else
+            echo "targets=android/arm64" >> "$GITHUB_OUTPUT"
+            echo "slug=arm64" >> "$GITHUB_OUTPUT"
+          fi
+
+      # gomobile bind 约 4-5 分钟（4 ABI）/ 约 2 分钟（仅 arm64）：按版本+ABI 缓存
       - name: Restore libgopeed.aar
         id: aar
         uses: actions/cache@v4
         with:
           path: android/app/libs/libgopeed.aar
-          key: libgopeed-aar-${{ vars.GOPEED_VERSION || 'v1.9.3' }}
+          key: libgopeed-aar-${{ vars.GOPEED_VERSION || 'v1.9.3' }}-${{ steps.abi.outputs.slug }}
 
       - name: Build libgopeed.aar
         if: steps.aar.outputs.cache-hit != 'true'
         run: bash scripts/build_libgopeed.sh
         env:
           GOPEED_VERSION: ${{ vars.GOPEED_VERSION || 'v1.9.3' }}
+          GOPEED_TARGETS: ${{ steps.abi.outputs.targets }}
+
+      # Gradle 依赖/编译缓存：冷编译可省 1-3 分钟
+      - name: Cache gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Verify libgopeed.aar
         shell: bash
