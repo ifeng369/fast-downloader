@@ -139,6 +139,50 @@ jobs:
             flutter build apk --release --target-platform android-arm64 --dart-define=APP_VERSION=${APP_VERSION%%+*} 2>&1 | tee -a build-android.log
           fi
 
+      # AGP 的 abiFilters/v1 签名在 Flutter 构建里不稳定：
+      # 这里对产物做确定性处理——删掉非目标 ABI 的原生库，再用 apksigner 显式签 v1+v2+v3。
+      - name: 瘦身 APK（仅目标 ABI）并重新签名
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${{ steps.abi.outputs.slug }}"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          KS_FILE="android/app/$(sed -n 's/^storeFile=//p' android/key.properties | tr -d '\r')"
+          KS_PASS=$(sed -n 's/^storePassword=//p' android/key.properties | tr -d '\r')
+          KEY_ALIAS=$(sed -n 's/^keyAlias=//p' android/key.properties | tr -d '\r')
+          KEY_PASS=$(sed -n 's/^keyPassword=//p' android/key.properties | tr -d '\r')
+          for APK in build/app/outputs/flutter-apk/*release.apk; do
+            [ -f "$APK" ] || continue
+            echo "== 处理 $APK (target=$TARGET)"
+            if [ "$TARGET" != "all" ]; then
+              python3 - "$APK" <<'PY'
+          import shutil, sys, zipfile
+          src = sys.argv[1]
+          tmp = src + '.slim'
+          dropped = 0
+          with zipfile.ZipFile(src) as zi, zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zo:
+              for info in zi.infolist():
+                  name = info.filename
+                  if name.startswith('lib/') and not name.startswith('lib/arm64-v8a/'):
+                      dropped += info.file_size
+                      continue
+                  zo.writestr(info, zi.read(name))
+          shutil.move(tmp, src)
+          print(f'dropped native libs: {dropped/1048576:.1f} MB')
+          PY
+            fi
+            "$BT/zipalign" -f -p 4 "$APK" "$APK.aligned"
+            "$BT/apksigner" sign \
+              --ks "$KS_FILE" --ks-type JKS \
+              --ks-pass "pass:$KS_PASS" --key-pass "pass:$KEY_PASS" \
+              --ks-key-alias "$KEY_ALIAS" \
+              --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+              --out "$APK.aligned.signed" "$APK.aligned"
+            mv "$APK.aligned.signed" "$APK"
+            rm -f "$APK.aligned"
+            ls -lh "$APK"
+          done
+
       - name: 收集 APK
         shell: bash
         run: |
@@ -180,10 +224,11 @@ jobs:
             exit 1
           fi
           # v1(JAR) 签名：旧系统与部分国产安装器只认 v1，缺了会报「没有开发者证书」
-          "$BT/apksigner" verify -v build/app/outputs/flutter-apk/app-release.apk | head -8
-          if ! unzip -l build/app/outputs/flutter-apk/app-release.apk \
-              | grep -qE 'META-INF/[^/]+\.(SF|RSA|DSA|EC)$'; then
-            echo "::error::APK 缺少 v1(JAR) 签名（META-INF/*.SF），旧系统/部分安装器会报「没有开发者证书」"
+          # 注意：不能只看 META-INF/*.SF（依赖也可能自带），必须由 apksigner 判定有效性
+          VERIFY=$("$BT/apksigner" verify -v build/app/outputs/flutter-apk/app-release.apk)
+          echo "$VERIFY" | grep -E 'Verified using v[123] scheme|Number of signers'
+          if ! echo "$VERIFY" | grep -q 'Verified using v1 scheme (JAR signing): true'; then
+            echo "::error::APK 的 v1(JAR) 签名无效，旧系统/部分安装器会报「没有开发者证书」"
             exit 1
           fi
           # 默认模式只保留 arm64 原生库：libgopeed.aar 自带三种 ABI，
