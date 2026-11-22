@@ -50,7 +50,7 @@ class XunleiState extends ChangeNotifier {
       final refresh = await _read(_kRefresh);
       final user = await _read(_kUser);
       username = await _read(_kUsername);
-      // 网页登录的设备 ID 必须原样复用；账号密码登录则按 refresh_token 派生
+      // 设备 ID 与登录凭据绑定（对照 AList）：按 refresh_token 派生
       client.setTokens(
         access: access,
         refresh: refresh,
