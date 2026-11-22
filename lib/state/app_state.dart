@@ -11,6 +11,7 @@ import '../api/quark_client.dart';
 import '../api/quark_models.dart';
 import '../core/gopeed/gopeed_boot.dart';
 import '../core/web_cookies.dart';
+import '../utils/app_logger.dart';
 
 class AppState extends ChangeNotifier {
   static const _sysChannel = WebCookies.channel;
@@ -333,6 +334,10 @@ class AppState extends ChangeNotifier {
 
   /// 当前可用的下载目录（无存储权限时回退到应用专属目录）。
   /// 返回前确保目录已经创建，所有下载入口都通过这里取得最终路径。
+  /// 默认下载目录名（旧版本目录名为 Quarklite，启动时自动改名迁移）
+  static const _defaultDirName = 'fast-download';
+  static const _legacyDirName = 'Quarklite';
+
   Future<String> effectiveDownloadDir() async {
     if (kIsWeb) return downloadDir;
 
@@ -345,20 +350,20 @@ class AppState extends ChangeNotifier {
 
     if (Platform.isIOS) {
       final docs = await getApplicationDocumentsDirectory();
-      return _ensureDirectory(_joinPath(docs.path, 'Quarklite'));
+      return _ensureDirectory(await _migrateAndJoin(docs.path));
     }
 
     if (Platform.isAndroid) {
       if (await canWriteDownload()) {
         final dir = downloadDir.isNotEmpty
             ? downloadDir
-            : '/storage/emulated/0/Download/Quarklite';
+            : await _migrateAndJoin('/storage/emulated/0/Download');
         return _ensureDirectory(dir);
       }
 
       final ext = await getExternalStorageDirectory();
       final base = ext?.path ?? (await getApplicationDocumentsDirectory()).path;
-      return _ensureDirectory(_joinPath(base, 'Quarklite'));
+      return _ensureDirectory(await _migrateAndJoin(base));
     }
 
     final dir = downloadDir.isNotEmpty
@@ -369,29 +374,42 @@ class AppState extends ChangeNotifier {
 
   Future<String> _platformDefaultDownloadDir() async {
     if (!kIsWeb && Platform.isAndroid) {
-      return '/storage/emulated/0/Download/Quarklite';
+      return _migrateAndJoin('/storage/emulated/0/Download');
     }
 
     if (!kIsWeb && Platform.isIOS) {
       final docs = await getApplicationDocumentsDirectory();
-      return _joinPath(docs.path, 'Quarklite');
+      return _migrateAndJoin(docs.path);
     }
 
     if (!kIsWeb && Platform.isWindows) {
       final downloads = await _getDownloadsDirectoryOrNull();
-      if (downloads != null) {
-        return _joinPath(downloads.path, 'Quarklite');
-      }
+      if (downloads != null) return _migrateAndJoin(downloads.path);
       final docs = await getApplicationDocumentsDirectory();
-      return _joinPath(_joinPath(docs.path, 'Downloads'), 'Quarklite');
+      return _migrateAndJoin(_joinPath(docs.path, 'Downloads'));
     }
 
     final downloads = await _getDownloadsDirectoryOrNull();
-    if (downloads != null) {
-      return _joinPath(downloads.path, 'Quarklite');
-    }
+    if (downloads != null) return _migrateAndJoin(downloads.path);
     final docs = await getApplicationDocumentsDirectory();
-    return _joinPath(_joinPath(docs.path, 'Downloads'), 'Quarklite');
+    return _migrateAndJoin(_joinPath(docs.path, 'Downloads'));
+  }
+
+  /// 拼出默认目录；若旧目录（Quarklite）存在且新目录（fast-download）不存在，
+  /// 直接把旧目录改名过去，避免老用户的文件"消失"。
+  Future<String> _migrateAndJoin(String base) async {
+    final target = _joinPath(base, _defaultDirName);
+    final legacy = _joinPath(base, _legacyDirName);
+    try {
+      if (!await Directory(target).exists() &&
+          await Directory(legacy).exists()) {
+        await Directory(legacy).rename(target);
+        AppLogger.I.i('download', '默认下载目录已迁移: $legacy → $target');
+      }
+    } catch (e) {
+      AppLogger.I.w('download', '默认下载目录迁移失败（继续用新目录）: $e');
+    }
+    return target;
   }
 
   Future<Directory?> _getDownloadsDirectoryOrNull() async {
