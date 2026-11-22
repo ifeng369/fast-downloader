@@ -124,7 +124,7 @@ class _QuarkLiteAppState extends State<QuarkLiteApp>
       isDark: isDark,
       textStyles: _appTextStyles,
       child: MaterialApp(
-        title: 'Quarklite',
+        title: 'fast-downloader',
         debugShowCheckedModeBanner: false,
         navigatorKey: widget.navigatorKey,
         // Material 主题提供文字/转场基座 + 暗色模式；Miuix 配色由外层跟随系统

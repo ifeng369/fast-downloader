@@ -1,4 +1,4 @@
-#define MyAppName "Quarklite"
+#define MyAppName "fast-downloader"
 #ifndef AppVersion
   #define AppVersion "1.3.0"
 #endif

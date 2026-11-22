@@ -78,7 +78,7 @@ bool FlutterWindow::OnCreate() {
   tray_icon_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   tray_icon_.uCallbackMessage = kTrayCallbackMessage;
   tray_icon_.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON));
-  wcscpy_s(tray_icon_.szTip, L"Quarklite");
+  wcscpy_s(tray_icon_.szTip, L"fast-downloader");
   tray_added_ = Shell_NotifyIconW(NIM_ADD, &tray_icon_) == TRUE;
   if (tray_added_) {
     // 声明使用 Vista+ 通知图标行为（否则托盘点击消息可能收不到）
@@ -186,7 +186,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
           break;
         case WM_RBUTTONUP: {
           HMENU menu = CreatePopupMenu();
-          AppendMenuW(menu, MF_STRING, 1, L"打开 Quarklite");
+          AppendMenuW(menu, MF_STRING, 1, L"打开 fast-downloader");
           AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
           AppendMenuW(menu, MF_STRING, 2, L"退出");
           // 先置前再弹菜单，否则菜单可能不响应点击

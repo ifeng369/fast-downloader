@@ -34,7 +34,7 @@ class IosBackgroundDownloadClient implements DownloadClient {
     _updatesSubscription = _downloader.updates.listen(_handleUpdate);
     _downloader.configureNotificationForGroup(
       group,
-      running: const TaskNotification('Quarklite 下载中', '{displayName}'),
+      running: const TaskNotification('fast-downloader 下载中', '{displayName}'),
       complete: const TaskNotification('下载完成', '{displayName} 已保存'),
       error: const TaskNotification('下载失败', '{displayName} 下载失败'),
       paused: const TaskNotification('下载已暂停', '{displayName}'),

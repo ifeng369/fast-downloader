@@ -17,7 +17,7 @@ class UploadNotifier {
           android: AndroidInitializationSettings('ic_stat_notifications'),
           iOS: DarwinInitializationSettings(),
           windows: WindowsInitializationSettings(
-            appName: 'Quarklite',
+            appName: 'fast-downloader',
             appUserModelId: 'com.quarklite.quarklite',
             guid: 'com.quarklite.quarklite',
           ),

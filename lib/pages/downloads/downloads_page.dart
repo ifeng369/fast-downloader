@@ -597,7 +597,7 @@ class _DownloadsPageState extends State<DownloadsPage>
             ? '$detail\n\n引擎进程被系统直接终止，最常见原因是杀毒软件拦截未签名的引擎程序。请：\n'
                 '1. 打开 Windows 安全中心 → 病毒和威胁防护 → 保护历史记录\n'
                 '2. 找到被阻止的 gopeed.exe，选择「允许」\n'
-                '3. 或将 Quarklite 安装目录加入排除项后重新打开软件'
+                '3. 或将 fast-downloader 安装目录加入排除项后重新打开软件'
             : detail,
         confirmText: '知道了',
       );

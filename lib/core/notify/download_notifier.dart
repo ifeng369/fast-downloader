@@ -35,7 +35,7 @@ class DownloadNotifier {
       FlutterForegroundTask.init(
         androidNotificationOptions: AndroidNotificationOptions(
           channelId: 'quarklite_service',
-          channelName: 'Quarklite 后台下载服务',
+          channelName: 'fast-downloader 后台下载服务',
           channelImportance: NotificationChannelImportance.LOW,
           showWhen: true,
           priority: NotificationPriority.LOW,
@@ -58,7 +58,7 @@ class DownloadNotifier {
         android: AndroidInitializationSettings('ic_stat_notifications'),
         iOS: DarwinInitializationSettings(),
         windows: WindowsInitializationSettings(
-          appName: 'Quarklite',
+          appName: 'fast-downloader',
           appUserModelId: 'com.quarklite.quarklite',
           guid: 'com.quarklite.quarklite',
         ),
