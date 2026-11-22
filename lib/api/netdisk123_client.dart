@@ -533,6 +533,21 @@ class Netdisk123Client {
     return files;
   }
 
+  static const _trashUrl = 'https://api.123278.com/a/api/file/trash';
+
+  /// 删除（移入回收站）。与网页端一致：`/a/api/file/trash` + fileTrashInfoList/operation。
+  /// 逐个提交（该接口单条 fileTrashInfoList 已验证，批量形态未确认）。
+  Future<void> deleteFiles(List<String> ids) async {
+    for (final id in ids) {
+      final n = int.tryParse(id);
+      await _request('POST', _trashUrl, {
+        'driveId': 0,
+        'fileTrashInfoList': {'FileId': n ?? id},
+        'operation': true,
+      });
+    }
+  }
+
   // ---------------- 下载（多通道回退，不经过客户端流量门禁） ----------------
 
   /// 诊断用：查询本月剩余流量 / 门禁状态。

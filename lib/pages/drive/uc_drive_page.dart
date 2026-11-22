@@ -35,6 +35,7 @@ class _UcDrivePageState extends State<UcDrivePage> {
   bool _selectMode = false;
   final Set<String> _selected = {};
   bool _downloading = false;
+  bool _deleting = false;
 
   UcClient get _client => UcState.I.client;
 
@@ -158,6 +159,32 @@ class _UcDrivePageState extends State<UcDrivePage> {
       _toast('批量下载失败: $e');
     } finally {
       if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  /// 把选中项移入回收站
+  Future<void> _deleteSelected() async {
+    if (_selected.isEmpty || _deleting) return;
+    final count = _selected.length;
+    final ok = await confirmMiuix(
+      context,
+      title: '删除文件',
+      content: '将把选中的 $count 项移入回收站，确定？',
+      confirmText: '删除',
+      danger: true,
+    );
+    if (ok != true) return;
+    setState(() => _deleting = true);
+    try {
+      await _client.deleteFiles(_selected.toList());
+      _toast('已移入回收站 $count 项');
+      _exitSelectMode();
+      await _load();
+    } catch (e) {
+      AppLogger.I.e('uc', '删除失败: $e');
+      _toast('删除失败: $e');
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
   }
 
@@ -318,6 +345,17 @@ class _UcDrivePageState extends State<UcDrivePage> {
             MiuixText('已选 $count 项',
                 fontSize: 14, color: colors.onSurfaceContainer),
             const Spacer(),
+            MiuixTextButton(
+              '删除',
+              onPressed: _deleteSelected,
+              colors: MiuixButtonColors(
+                color: Colors.redAccent,
+                disabledColor: Colors.redAccent,
+                contentColor: Colors.white,
+                disabledContentColor: Colors.white70,
+              ),
+            ),
+            const SizedBox(width: 8),
             MiuixButton(
               onPressed: _downloading || count == 0 ? null : _batchDownload,
               colors: MiuixButtonColors(

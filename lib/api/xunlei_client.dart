@@ -445,6 +445,28 @@ class XunleiClient {
     return XunleiFile.fromJson(map);
   }
 
+  /// 删除到回收站（`PATCH /files/{id}/trash`，逐个提交；token 失效自动续期重试）
+  Future<void> deleteFiles(List<String> ids) async {
+    for (final id in ids) {
+      Future<Map<String, dynamic>> call() async => _parse(
+          await _dio.request<dynamic>('$_driveBase/files/$id/trash',
+              options: Options(
+                  method: 'PATCH',
+                  headers: _authHeaders(),
+                  validateStatus: (_) => true)));
+      try {
+        await call();
+      } on XunleiException catch (e) {
+        final retryable =
+            e.code == 4122 || e.code == 4121 || e.code == 10 || e.code == 16;
+        if (!retryable) rethrow;
+        final err = await refresh();
+        if (err != null) rethrow;
+        await call();
+      }
+    }
+  }
+
   /// 批量获取文件详情（含直链/媒体链接，失败项跳过）
   Future<Map<String, XunleiFile>> getDownloadFiles(
       List<(String, String)> idAndSpace) async {

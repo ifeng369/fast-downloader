@@ -248,6 +248,19 @@ class UcClient {
     });
   }
 
+  // ---------------- 删除 ----------------
+
+  /// 删除文件/文件夹（移入回收站）。
+  ///
+  /// body 形态实测：`{"filelist": [fid, ...]}`（字符串数组；传对象数组会 500）。
+  /// 服务端异步执行并返回 task_id，这里稍等后由调用方刷新列表。
+  Future<String> deleteFiles(List<String> fids) async {
+    if (fids.isEmpty) return '';
+    final data = await _post('$api/file/delete', data: {'filelist': fids});
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    return data is Map ? (data['task_id']?.toString() ?? '') : '';
+  }
+
   // ---------------- 分享 ----------------
 
   static final _shareUrlRe =
