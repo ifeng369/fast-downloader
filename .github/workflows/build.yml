@@ -171,22 +171,20 @@ jobs:
           flutter pub get
           flutter build windows --release
 
-      - name: Bundle gopeed.exe + package zip
+      - name: Bundle gopeed.exe
         shell: pwsh
         run: |
           $out = "build/windows/x64/runner/Release"
           if (!(Test-Path $out)) { throw "Windows 构建产物目录不存在: $out" }
           Copy-Item "C:\gopeed-web\gopeed.exe" -Destination "$out\gopeed.exe" -Force
           Get-ChildItem $out | Select-Object Name, Length
-          $zip = "build/quarklite-windows-x64.zip"
-          Compress-Archive -Path "$out\*" -DestinationPath $zip -Force
-          Get-Item $zip | Select-Object FullName, Length
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
+          # 直接上传目录：GitHub 只会包一层 zip，避免"两层压缩"
           name: quarklite-windows
-          path: build/quarklite-windows-x64.zip
+          path: build/windows/x64/runner/Release/
           if-no-files-found: error
 
   publish-release:
@@ -210,6 +208,22 @@ jobs:
           name: quarklite-windows
           path: release/windows
 
+      - name: 打包 Windows 发布包（单层，无额外目录）
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release/windows
+          python3 - <<'PY'
+          import os, zipfile
+          with zipfile.ZipFile('../quarklite-windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              for root, _, files in os.walk('.'):
+                  for f in files:
+                      p = os.path.join(root, f)
+                      z.write(p, os.path.relpath(p, '.'))
+          print('zip ok')
+          PY
+          ls -lh ../quarklite-windows-x64.zip
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -217,14 +231,14 @@ jobs:
           VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | cut -d+ -f1 | tr -d '\r')
           TAG="v$VER"
           echo "Publishing $TAG"
-          ls -lh release/android release/windows
+          ls -lh release/android release/*.zip
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release/android/* release/windows/*
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release/android/* release/*.zip
           else
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "Quarklite $TAG" \
               --generate-notes \
               --target "$GITHUB_SHA" \
-              release/android/* release/windows/*
+              release/android/* release/*.zip
           fi
