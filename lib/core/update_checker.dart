@@ -45,18 +45,13 @@ class UpdateChecker {
   /// 版本号：优先由构建注入（CI 用 --dart-define=APP_VERSION=1.3.10），
   /// 本地直接运行时回退到下方默认值（需与 pubspec.yaml 的 version 保持一致）
   static const currentVersion =
-      String.fromEnvironment('APP_VERSION', defaultValue: '1.3.11');
+      String.fromEnvironment('APP_VERSION', defaultValue: '1.3.12');
 
   static const repo = 'ifeng369/fast-downloader';
 
   /// GitHub 加速代理前缀（下载/取清单时拼在原始 URL 前面）
   static const proxyPrefix = 'https://gh.ifeng369.top/';
 
-  /// 代理地址：https://gh.ifeng369.top/<原始 URL>
-  static Uri proxyUrl(Uri url) => Uri.parse('$proxyPrefix${url.toString()}');
-
-  static final Uri _latestJsonUrl =
-      Uri.parse('https://github.com/$repo/releases/latest/download/latest.json');
   /// 代理地址：https://gh.ifeng369.top/<原始 URL>
   static Uri proxyUrl(Uri url) => Uri.parse('$proxyPrefix${url.toString()}');
 
