@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -9,12 +10,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../state/download_service.dart';
 import '../widgets/miuix_common.dart';
 
-/// 平台对应的安装包（Release asset）
+/// 平台对应的安装包（latest.json 里的 assets 条目）
 class UpdateAsset {
   final String name;
   final Uri url;
+  final String sha256;
 
-  const UpdateAsset({required this.name, required this.url});
+  const UpdateAsset({required this.name, required this.url, this.sha256 = ''});
 }
 
 class AppUpdate {
@@ -33,22 +35,28 @@ class AppUpdate {
   });
 }
 
+/// 检查更新：读取 Release 附带的 `latest.json`（不依赖 GitHub API，避免匿名限流 403）。
+///
+/// 直连 `https://github.com/<repo>/releases/latest/download/latest.json`，
+/// 失败再走 `https://gh.ifeng369.top/<原始链接>` 代理。
 class UpdateChecker {
   UpdateChecker._();
 
-  /// 版本号：优先由构建注入（CI 用 --dart-define=APP_VERSION=1.3.3），
+  /// 版本号：优先由构建注入（CI 用 --dart-define=APP_VERSION=1.3.10），
   /// 本地直接运行时回退到下方默认值（需与 pubspec.yaml 的 version 保持一致）
   static const currentVersion =
       String.fromEnvironment('APP_VERSION', defaultValue: '1.3.10');
 
   static const repo = 'ifeng369/fast-downloader';
 
-  /// 轻量探测：/releases/latest 会 302 到 /releases/tag/vX.Y.Z，不消耗 API 限流
-  static const _latestPageUrl = 'https://github.com/$repo/releases/latest';
+  /// GitHub 加速代理前缀（下载/取清单时拼在原始 URL 前面）
+  static const proxyPrefix = 'https://gh.ifeng369.top/';
 
-  /// 兜底：GitHub API（匿名 60 次/小时/IP，容易 403）
-  static const _latestApiUrl =
-      'https://api.github.com/repos/$repo/releases/latest';
+  /// 代理地址：https://gh.ifeng369.top/<原始 URL>
+  static Uri proxyUrl(Uri url) => Uri.parse('$proxyPrefix${url.toString()}');
+
+  static final Uri _latestJsonUrl =
+      Uri.parse('https://github.com/$repo/releases/latest/download/latest.json');
 
   /// 最近一次检查失败的原因（手动检查时展示，避免把失败伪装成“已是最新”）
   static String? lastError;
@@ -56,102 +64,77 @@ class UpdateChecker {
   static final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 12),
     receiveTimeout: const Duration(seconds: 20),
-    headers: const {
-      'Accept': 'application/vnd.github+json',
-      'User-Agent': 'fast-downloader-update-checker',
-    },
+    headers: const {'User-Agent': 'fast-downloader-update-checker'},
   ));
 
   static Future<AppUpdate?> check() async {
     lastError = null;
-    final viaRedirect = await _checkViaRedirect();
-    if (viaRedirect != null) return viaRedirect;
-    return _checkViaApi();
+    // 先直连，失败再走代理；两者都是静态文件，不消耗 GitHub API 配额
+    String? body;
+    for (final url in [_latestJsonUrl, proxyUrl(_latestJsonUrl)]) {
+      body = await _fetchText(url);
+      if (body != null) break;
+    }
+    if (body == null) {
+      lastError ??= '无法连接 GitHub 或代理，请检查网络';
+      return null;
+    }
+    final info = parseLatestJson(body);
+    if (info == null) {
+      lastError = 'latest.json 内容不正确';
+      return null;
+    }
+    if (!_isNewer(info.version, currentVersion)) return null;
+    return info;
   }
 
-  /// 1) 跟随 /releases/latest 的 302 拿到最新 tag（无 API 限流）
-  /// 注：asset 直接按固定文件名拼下载地址（CI 产物名固定）
-  static Future<AppUpdate?> _checkViaRedirect() async {
+  static Future<String?> _fetchText(Uri url) async {
     try {
       final resp = await _dio.get<dynamic>(
-        _latestPageUrl,
-        options: Options(followRedirects: false, validateStatus: (_) => true),
+        url.toString(),
+        options: Options(
+          responseType: ResponseType.plain,
+          validateStatus: (s) => s != null && s < 400,
+        ),
       );
-      final version = versionFromLocation(
-          resp.headers.value('location') ?? '');
-      if (version == null) {
-        lastError = '无法解析最新版本（HTTP ${resp.statusCode}）';
-        return null;
-      }
-      if (!_isNewer(version, currentVersion)) return null;
-      return AppUpdate(
-        version: version,
-        releaseUrl: Uri.parse('https://github.com/$repo/releases/tag/v$version'),
-        notes: '',
-        asset: assetForVersion(version),
-      );
+      final data = resp.data;
+      return data is String ? data : jsonEncode(data);
+    } on DioException catch (e) {
+      lastError =
+          '获取 latest.json 失败（${e.response?.statusCode ?? e.type.name}）';
+      return null;
     } catch (e) {
-      lastError = '网络错误: $e';
+      lastError = '获取 latest.json 失败: $e';
       return null;
     }
   }
 
-  /// 2) 兜底走 GitHub API，可额外拿到更新说明与真实 asset 列表
-  static Future<AppUpdate?> _checkViaApi() async {
+  /// latest.json 结构：
+  /// ```json
+  /// {"version":"1.3.10","notes":"...","assets":[{"name":"...","url":"...","sha256":"..."}]}
+  /// ```
+  static AppUpdate? parseLatestJson(String body) {
     try {
-      final response = await _dio.get<dynamic>(_latestApiUrl);
-      final data = response.data;
+      final data = jsonDecode(body);
       if (data is! Map) return null;
-      final tag = data['tag_name']?.toString() ?? '';
-      final version = _normalize(tag);
-      final url = Uri.tryParse(data['html_url']?.toString() ?? '');
-      if (version == null || url == null || !url.hasScheme) return null;
-      if (!_isNewer(version, currentVersion)) return null;
+      final version =
+          _normalize((data['version'] ?? data['tag'] ?? '').toString());
+      if (version == null) return null;
+      final notes =
+          (data['notes'] ?? data['body'] ?? '').toString().trim();
       return AppUpdate(
         version: version,
-        releaseUrl: url,
-        notes: data['body']?.toString().trim() ?? '',
+        releaseUrl:
+            Uri.parse('https://github.com/$repo/releases/tag/v$version'),
+        notes: notes,
         asset: pickAsset(data['assets']),
       );
-    } on DioException catch (e) {
-      lastError = e.response?.statusCode == 403
-          ? 'GitHub API 限流（匿名 60 次/小时），请稍后再试'
-          : '检查失败: ${e.message}';
-      return null;
-    } catch (e) {
-      lastError ??= '检查失败: $e';
+    } catch (_) {
       return null;
     }
   }
 
-  /// 从 302 Location（.../releases/tag/v1.3.10）解析版本号
-  static String? versionFromLocation(String location) {
-    final match = RegExp(r'/releases/tag/([^/?#]+)').firstMatch(location);
-    return match == null ? null : _normalize(match.group(1)!);
-  }
-
-  /// 按固定产物名拼 asset 下载地址（与 CI 发布命名保持一致）
-  static UpdateAsset? assetForVersion(String version) {
-    if (kIsWeb) return null;
-    final base = 'https://github.com/$repo/releases/download/v$version';
-    if (Platform.isWindows) {
-      const name = 'fast-downloader-windows-x64.zip';
-      return UpdateAsset(name: name, url: Uri.parse('$base/$name'));
-    }
-    if (Platform.isAndroid) {
-      const name = 'fast-downloader-arm64-v8a.apk';
-      return UpdateAsset(name: name, url: Uri.parse('$base/$name'));
-    }
-    return null;
-  }
-
-  /// GitHub 加速代理前缀（下载时拼在原始 URL 前面）
-  static const proxyPrefix = 'https://gh.ifeng369.top/';
-
-  /// 代理下载地址：https://gh.ifeng369.top/<原始 URL>
-  static Uri proxyUrl(Uri asset) => Uri.parse('$proxyPrefix${asset.toString()}');
-
-  /// 从 Release 的 assets 里挑出当前平台的安装包：
+  /// 从 assets 里挑出当前平台的安装包：
   /// - Windows：`*.zip`（优先名字带 windows）
   /// - Android：`*.apk`（优先 arm64-v8a）
   static UpdateAsset? pickAsset(dynamic assets) {
@@ -160,9 +143,14 @@ class UpdateChecker {
       for (final a in assets) {
         if (a is! Map) continue;
         final name = (a['name'] ?? '').toString();
-        final url = Uri.tryParse((a['browser_download_url'] ?? '').toString());
+        final url = Uri.tryParse(
+            (a['url'] ?? a['browser_download_url'] ?? '').toString());
         if (name.isEmpty || url == null || !url.hasScheme) continue;
-        items.add(UpdateAsset(name: name, url: url));
+        items.add(UpdateAsset(
+          name: name,
+          url: url,
+          sha256: (a['sha256'] ?? '').toString(),
+        ));
       }
     }
     if (items.isEmpty || kIsWeb) return null;
@@ -193,8 +181,7 @@ class UpdateChecker {
     if (update == null) {
       if (manual) {
         final err = lastError;
-        MiuixToast.show(
-            err == null ? '当前已是最新版本' : '检查更新失败：$err');
+        MiuixToast.show(err == null ? '当前已是最新版本' : '检查更新失败：$err');
       }
       return;
     }

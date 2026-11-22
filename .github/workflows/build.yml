@@ -285,6 +285,28 @@ jobs:
           # 下载完整性校验：SHA-256 清单随包发布（应用内/代理下载后可对比）
           sha256sum release/android/*.apk release/*.zip | sed 's#release/##' > release/SHA256SUMS.txt
           cat release/SHA256SUMS.txt
+          # latest.json：应用端检查更新只读这个文件（不调 GitHub API，避免匿名限流 403）
+          python3 - "$TAG" <<'PY'
+          import glob, hashlib, json, os, sys
+          tag = sys.argv[1]
+          ver = tag[1:] if tag.startswith('v') else tag
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{tag}"
+          assets = []
+          for path in sorted(glob.glob('release/android/*.apk')) + sorted(glob.glob('release/*.zip')):
+              name = os.path.basename(path)
+              data = open(path, 'rb').read()
+              assets.append({
+                  'name': name,
+                  'url': f'{base}/{name}',
+                  'size': len(data),
+                  'sha256': hashlib.sha256(data).hexdigest(),
+              })
+          out = {'version': ver, 'tag': tag, 'notes': '', 'assets': assets}
+          open('release/latest.json', 'w', encoding='utf-8').write(
+              json.dumps(out, ensure_ascii=False, indent=2))
+          print(json.dumps(out, ensure_ascii=False)[:500])
+          PY
+          cat release/latest.json
           # GitHub API 偶发 403/5xx：发版动作重试 3 次，避免整条流水线白跑
           retry() {
             for i in 1 2 3; do

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,15 +8,16 @@ void main() {
   const assets = [
     {
       'name': 'fast-downloader-arm64-v8a.apk',
-      'browser_download_url':
+      'url':
           'https://github.com/ifeng369/fast-downloader/releases/download/v9/fast-downloader-arm64-v8a.apk',
+      'sha256': 'aa',
     },
     {
       'name': 'fast-downloader-windows-x64.zip',
-      'browser_download_url':
+      'url':
           'https://github.com/ifeng369/fast-downloader/releases/download/v9/fast-downloader-windows-x64.zip',
+      'sha256': 'bb',
     },
-    {'name': 'checksums.txt', 'browser_download_url': 'not-a-url'},
   ];
 
   test('pickAsset 按平台挑安装包（Windows 取 zip）', () {
@@ -24,6 +26,7 @@ void main() {
     if (Platform.isWindows) {
       expect(asset!.name, 'fast-downloader-windows-x64.zip');
       expect(asset.url.path, endsWith('/fast-downloader-windows-x64.zip'));
+      expect(asset.sha256, 'bb');
     }
   });
 
@@ -32,10 +35,30 @@ void main() {
     expect(UpdateChecker.pickAsset(null), isNull);
     expect(
       UpdateChecker.pickAsset([
-        {'name': 'x.zip', 'browser_download_url': ''},
+        {'name': 'x.zip', 'url': ''},
       ]),
       isNull,
     );
+  });
+
+  test('parseLatestJson 解析版本与资产', () {
+    final info = UpdateChecker.parseLatestJson(jsonEncode({
+      'version': 'v9.9.9',
+      'notes': '修复若干问题',
+      'assets': assets,
+    }));
+    expect(info, isNotNull);
+    expect(info!.version, '9.9.9');
+    expect(info.notes, '修复若干问题');
+    expect(info.releaseUrl.toString(),
+        'https://github.com/ifeng369/fast-downloader/releases/tag/v9.9.9');
+    expect(info.asset, isNotNull);
+  });
+
+  test('parseLatestJson 拒绝无效内容', () {
+    expect(UpdateChecker.parseLatestJson(''), isNull);
+    expect(UpdateChecker.parseLatestJson('not json'), isNull);
+    expect(UpdateChecker.parseLatestJson('{"version":""}'), isNull);
   });
 
   test('proxyUrl 拼在 gh 代理前缀后', () {
@@ -44,19 +67,5 @@ void main() {
     );
     expect(uri.toString(),
         'https://gh.ifeng369.top/https://github.com/a/b/releases/download/v1/c.zip');
-  });
-
-  test('versionFromLocation 解析 /releases/latest 的 302 目标', () {
-    expect(
-      UpdateChecker.versionFromLocation(
-          'https://github.com/ifeng369/fast-downloader/releases/tag/v1.3.10'),
-      '1.3.10',
-    );
-    expect(
-      UpdateChecker.versionFromLocation(
-          'https://github.com/ifeng369/fast-downloader/releases'),
-      isNull,
-    );
-    expect(UpdateChecker.versionFromLocation(''), isNull);
   });
 }
