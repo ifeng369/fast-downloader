@@ -394,6 +394,12 @@ class _ShareFilesPageState extends State<ShareFilesPage> {
       title: file.fileName,
       actions: [
         (icon: Icons.download_rounded, text: '立即下载', value: 'download', color: null),
+        (
+          icon: Icons.cloud_download_rounded,
+          text: '转存后下载',
+          value: 'save_download',
+          color: null
+        ),
         (icon: Icons.save_alt_rounded, text: '保存到网盘', value: 'save', color: AppColors.green),
       ],
     ).then((v) {
@@ -401,6 +407,8 @@ class _ShareFilesPageState extends State<ShareFilesPage> {
       switch (v) {
         case 'download':
           _downloadFile(file);
+        case 'save_download':
+          _saveThenDownload(file);
         case 'save':
           _saveFile(file);
       }
@@ -451,6 +459,64 @@ class _ShareFilesPageState extends State<ShareFilesPage> {
         _batchSave();
       }
     });
+  }
+
+  /// 转存到自己的网盘后，自动把转存后的文件加入下载任务
+  Future<void> _saveThenDownload(QuarkShareFile file) async {
+    if (!AppState.I.isLoggedIn) {
+      _toast('请先登录');
+      return;
+    }
+    final msg = await _ensurePermission();
+    if (msg != null) return;
+    final quark = AppState.I.quark;
+    try {
+      _toast('正在转存…');
+      // 转存前先记下根目录已有文件，转存后用 fid 差集定位新文件（重名时服务端会自动改名）
+      final beforeFids =
+          (await quark.listFiles('0')).map((f) => f.fid).toSet();
+      await quark.saveShare(widget.session, [file], '0');
+      final after = await quark.listFiles('0');
+      final added = after
+          .where((f) => !f.isDir && !beforeFids.contains(f.fid))
+          .toList();
+      QuarkFile? saved;
+      if (added.length == 1) {
+        saved = added.first;
+      } else if (added.isNotEmpty) {
+        saved = added.firstWhere(
+          (f) => f.fileName == file.fileName,
+          orElse: () =>
+              added.reduce((a, b) => a.updatedAt >= b.updatedAt ? a : b),
+        );
+      } else {
+        final sameName = after
+            .where((f) => !f.isDir && f.fileName == file.fileName)
+            .toList();
+        if (sameName.isNotEmpty) {
+          saved = sameName
+              .reduce((a, b) => a.updatedAt >= b.updatedAt ? a : b);
+        }
+      }
+      if (saved == null) {
+        throw QuarkException(-1, '转存后在网盘里没有找到该文件');
+      }
+      final (infos, cookie) = await quark.getDownloadInfo([saved.fid]);
+      if (infos.isEmpty || infos.first.url.isEmpty) {
+        throw QuarkException(-1, '未获取到下载地址');
+      }
+      final info = infos.first;
+      final err = await DownloadService.addDirectUrl(
+        url: info.url,
+        fileName: info.fileName.isNotEmpty ? info.fileName : saved.fileName,
+        cookie: cookie,
+      );
+      if (err != null) throw Exception(err);
+      _toast('已转存并加入下载队列');
+      DownloadManager.I.startPolling();
+    } catch (e) {
+      _toast('转存后下载失败: $e');
+    }
   }
 
   Future<void> _saveFile(QuarkShareFile file) async {
