@@ -1,12 +1,12 @@
 name: Build Android & Windows
 
 on:
-  # 推 tag（v*）时构建并发布 Release
+  # 只监听 main：一次发版只有「一轮」构建。
+  # 版本号来自 pubspec.yaml，tag 与 Release 由 CI 自己创建，所以不需要推 tag 来触发
+  # （推 tag 也不再触发构建，避免 main + tag 各跑一遍）。
+  # 缓存也天然写在默认分支上：actions/cache 只能读「自己 ref + 默认分支」的缓存，
+  # 写在 main 上才对所有后续构建可见，tag 触发则每次都是冷启动。
   push:
-    tags: ['v*']
-    # main 推送只做构建，用来把 flutter/gradle 缓存写到默认分支上：
-    # actions/cache 只能读「当前 ref + 默认分支」的缓存，tag 构建读不到分支缓存，
-    # 必须让 main 上存一份，tag 构建才能通过 restore-keys 命中（不发 Release）
     branches: [main]
   # 手动重跑（重发某个版本的产物用，不会自动触发）
   workflow_dispatch:
@@ -25,68 +25,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 只负责把「依赖下载缓存」写到默认分支（main）。
-  # actions/cache 的读取范围是硬性的：一个 run 只能读「自己 ref + 默认分支」的缓存，
-  # 所以 tag 之间天然不共享；唯一解法是让 main 上一直有最新的一份。
-  # 缓存里只有 wrapper dists 与 modules-2（纯依赖下载，不含构建产物），
-  # 所以这里只做 pub get + gradle 依赖解析即可，不必跑完整构建。
-  warm-cache-linux:
-    if: github.event_name == 'push' && github.ref_type != 'tag'
+  # 版本闸门：main 上 pubspec.yaml 的版本号若已发过 Release（tag 已存在），
+  # 说明这次推送只是改代码/文档，不必重复构建；提升版本号后才跑全量构建 + 发版。
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      name: ${{ steps.v.outputs.name }}
+      tag: ${{ steps.v.outputs.tag }}
+      build: ${{ steps.v.outputs.build }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: zulu
-          java-version: '17'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.44.8'
-          cache: true
-
-      - name: Cache gradle
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/wrapper/dists
-            ~/.gradle/caches/modules-2
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
-
-      - name: 预热 Android 依赖
+      - name: Resolve version
+        id: v
         shell: bash
         run: |
-          flutter pub get
-          cd android
-          chmod +x gradlew
-          ./gradlew --no-daemon :app:dependencies --configuration releaseRuntimeClasspath > /dev/null
-
-  # Windows 侧同理：预热 Flutter Windows 工具链 + pub 缓存，让 tag 构建的 Setup Flutter 直接命中
-  warm-cache-windows:
-    if: github.event_name == 'push' && github.ref_type != 'tag'
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.44.8'
-          cache: true
-
-      - name: 预热依赖
-        run: flutter pub get
+          VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | tr -d '\r')
+          NAME="${VER%%+*}"
+          TAG="v$NAME"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$TAG 已存在（版本号未提升），本次不构建、不发版"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "将构建并发布 $TAG（versionName $NAME，versionCode 取 run_number）"
+          fi
 
   build-android:
-    # 推 main 只预热缓存，不重复全量构建；tag 与手动触发才产出安装包
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: prepare
+    # 版本号提升（目标 tag 还不存在）才构建；手动触发一律构建
+    if: needs.prepare.outputs.build == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write # 失败时把构建日志贴到 commit comment，便于排查
@@ -94,19 +67,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # 版本号以 tag 为唯一来源：v1.3.19 -> versionName 1.3.19，versionCode 取 run_number（单调递增）。
-      # 非 tag 构建（推 main 只为预热缓存）保持 pubspec.yaml 原值。
+      # 版本号来源：pubspec.yaml 的 version（= versionName），
+      # versionCode 取 run_number（单调递增，重跑同一版本也不会装不上）
       - name: Resolve version
         id: ver
         shell: bash
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            NAME="${GITHUB_REF_NAME#v}"
-            CODE="${GITHUB_RUN_NUMBER}"
-            sed -i -E "s/^version:.*/version: ${NAME}+${CODE}/" pubspec.yaml
-            echo "tag 驱动版本: ${NAME}+${CODE}"
-          fi
-          VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | tr -d '\r')
+          NAME="${{ needs.prepare.outputs.name }}"
+          CODE="${GITHUB_RUN_NUMBER}"
+          sed -i -E "s/^version:.*/version: ${NAME}+${CODE}/" pubspec.yaml
+          VER="${NAME}+${CODE}"
           echo "app_version=$VER" >> "$GITHUB_OUTPUT"
           echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
           echo "Building version: $VER"
@@ -355,24 +325,22 @@ jobs:
           if-no-files-found: error
 
   build-windows:
-    # 推 main 只预热缓存，不重复全量构建；tag 与手动触发才产出安装包
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: prepare
+    # 与 build-android 一致：版本号提升才构建
+    if: needs.prepare.outputs.build == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # 与 build-android 一致：tag 驱动版本号（Windows 产物元数据取自 pubspec.yaml）
+      # 与 build-android 一致：versionName 取 pubspec.yaml，versionCode 取 run_number
       - name: Resolve version
         shell: bash
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            NAME="${GITHUB_REF_NAME#v}"
-            CODE="${GITHUB_RUN_NUMBER}"
-            sed -i -E "s/^version:.*/version: ${NAME}+${CODE}/" pubspec.yaml
-            echo "tag 驱动版本: ${NAME}+${CODE}"
-          fi
-          VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | tr -d '\r')
+          NAME="${{ needs.prepare.outputs.name }}"
+          CODE="${GITHUB_RUN_NUMBER}"
+          sed -i -E "s/^version:.*/version: ${NAME}+${CODE}/" pubspec.yaml
+          VER="${NAME}+${CODE}"
           echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
           echo "Building version: $VER"
 
@@ -434,9 +402,9 @@ jobs:
           if-no-files-found: error
 
   publish-release:
-    needs: [build-android, build-windows]
-    # 只有 tag（v*）推送才发 Release；main 推送/手动触发默认只出产物
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish == true
+    needs: [prepare, build-android, build-windows]
+    # 版本号提升的 main 推送自动发版；手动触发需勾选 publish
+    if: (github.event_name == 'push' && needs.prepare.outputs.build == 'true') || inputs.publish == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -477,13 +445,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # build job 里 sed 改过的 pubspec.yaml 不在这个 workspace，tag 构建直接取 tag 名
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            TAG="${GITHUB_REF_NAME}"
-          else
-            VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | cut -d+ -f1 | tr -d '\r')
-            TAG="v$VER"
-          fi
+          # 版本号来自 pubspec.yaml；tag（v1.3.21）由本步骤在 GITHUB_SHA 上创建
+          TAG="${{ needs.prepare.outputs.tag }}"
           echo "Publishing $TAG"
           ls -lh release/android release/*.zip
           # 下载完整性校验：SHA-256 清单随包发布（应用内/代理下载后可对比）
