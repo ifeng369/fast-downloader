@@ -33,6 +33,10 @@ class _DownloadsPageState extends State<DownloadsPage>
   @override
   bool get wantKeepAlive => true;
 
+  /// 桌面端（Windows/macOS/Linux）才支持「打开文件夹 / 打开文件」
+  bool get _isDesktop =>
+      !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+
   List<GopeedTask> _applyFilter(List<GopeedTask> all) {
     return switch (_filter) {
       1 => all
@@ -379,7 +383,7 @@ class _DownloadsPageState extends State<DownloadsPage>
     final selected = _selected.contains(task.id);
     final colors = MiuixTheme.of(context).colors;
 
-    return MiuixCard(
+    final card = MiuixCard(
       onPressed: () {
         if (_selectMode) _toggleSelect(task);
       },
@@ -469,6 +473,13 @@ class _DownloadsPageState extends State<DownloadsPage>
         ),
       ),
     );
+
+    if (_selectMode || !_isDesktop) return card;
+    // 桌面端双击已完成的任务 → 用系统默认程序打开文件
+    return GestureDetector(
+      onDoubleTap: () => _openFile(task),
+      child: card,
+    );
   }
 
   void _showTaskMenu(GopeedTask task) {
@@ -509,31 +520,60 @@ class _DownloadsPageState extends State<DownloadsPage>
     });
   }
 
-  /// 在系统文件管理器里打开任务所在目录（Windows 会选中该文件）
-  ///
-  /// 注意：一定要传**存在的目录**。explorer 收到不存在的路径会退回默认文件夹
-  /// （表现为“打开去了我的文档”）。
-  Future<void> _openFolder(GopeedTask task) async {
-    final downloadDir = await AppState.I.effectiveDownloadDir();
+  /// 任务文件的真实路径：任务记录路径优先，其次「下载目录 + 任务名」
+  Future<String?> _resolveTaskFile(GopeedTask task) async {
     final path = task.filePath;
-
-    // 候选：任务记录的文件路径 → 下载目录 + 任务名
-    String? filePath;
     if (path.isNotEmpty) {
       try {
-        if (await File(path).exists()) filePath = path;
+        if (await File(path).exists()) return path;
       } catch (_) {}
     }
-    if (filePath == null && task.name.isNotEmpty) {
-      final guess = '$downloadDir${Platform.pathSeparator}${task.name}';
+    if (task.name.isNotEmpty) {
       try {
-        if (await File(guess).exists()) filePath = guess;
+        final dir = await AppState.I.effectiveDownloadDir();
+        final guess = '$dir${Platform.pathSeparator}${task.name}';
+        if (await File(guess).exists()) return guess;
       } catch (_) {}
     }
+    return null;
+  }
+
+  /// 双击已完成的任务：交给系统默认程序打开文件（仅桌面端）
+  Future<void> _openFile(GopeedTask task) async {
+    if (kIsWeb || !_isDesktop || task.status != GopeedStatus.done) return;
+    final filePath = await _resolveTaskFile(task);
+    if (filePath == null) {
+      _toast('文件不存在，可能已被移动或删除');
+      return;
+    }
+    // 引擎在 Windows 上回传的是正斜杠路径，cmd/explorer 会解析失败，先统一
+    final p = Platform.isWindows ? filePath.replaceAll('/', '\\') : filePath;
+    AppLogger.I.i('download', '打开文件: $p');
+    try {
+      if (Platform.isWindows) {
+        // 等价于在资源管理器里双击：start 会把文件交给 ShellExecute 的关联程序
+        await Process.start('cmd.exe', ['/c', 'start', '', p]);
+      } else if (Platform.isMacOS) {
+        await Process.start('open', [p]);
+      } else {
+        await Process.start('xdg-open', [p]);
+      }
+    } catch (e) {
+      _toast('打开文件失败: $e');
+    }
+  }
+
+  /// 在系统文件管理器里打开任务所在目录（Windows 会选中该文件）
+  ///
+  /// 两个坑（都会让 explorer 退回默认文件夹，表现为「打开了桌面」）：
+  /// 1. `/select,` 必须和路径拼成**同一个参数**，中间不能有空格；
+  /// 2. 路径分隔符要统一成反斜杠（引擎回传的是正斜杠）。
+  Future<void> _openFolder(GopeedTask task) async {
+    final downloadDir = await AppState.I.effectiveDownloadDir();
+    final filePath = await _resolveTaskFile(task);
+
     // 目录：优先文件所在目录，其次下载目录本身
-    var dir = filePath != null
-        ? File(filePath).parent.path
-        : (path.isNotEmpty ? File(path).parent.path : downloadDir);
+    var dir = filePath != null ? File(filePath).parent.path : downloadDir;
     try {
       final d = Directory(dir);
       if (!await d.exists()) {
@@ -551,8 +591,9 @@ class _DownloadsPageState extends State<DownloadsPage>
         '打开文件夹: 文件=${filePath ?? "未找到"} 目录=$dir 下载目录=$downloadDir');
     try {
       if (Platform.isWindows) {
-        await Process.start(
-            'explorer.exe', filePath != null ? ['/select,', filePath] : [dir]);
+        final sel = filePath?.replaceAll('/', '\\');
+        await Process.start('explorer.exe',
+            [sel != null ? '/select,$sel' : dir.replaceAll('/', '\\')]);
       } else if (Platform.isMacOS) {
         await Process.start('open', filePath != null ? ['-R', filePath] : [dir]);
       } else if (Platform.isLinux) {
