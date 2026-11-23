@@ -328,3 +328,37 @@ User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; M2004J7AC Build/SP1A.210812.016)
 - AList：`drivers/thunderx/{driver,util}.go`（迅雷X）
 - pan.xunlei.com 前端 JS 静态分析：`getFileInfo(usage)`、`ts_downloader`、下载引擎弹窗
 - AList PR #8342：账号密码登录修复 + creditkey 风控流程说明
+
+## 11. 「网页登录」模式实现记录（web 身份）
+
+App 身份（`SPACE_BROWSER` + App UA + captcha_sign）之外，本项目还支持直接从
+`https://pan.xunlei.com/login/` 的网页登录态接管会话。相关代码：
+`XunleiClient(webMode)`、`XunleiState.loginWithWebSession`、`WebLoginPage(provider: xunlei)`。
+
+网页端身份（线上 JS `utils-initial` 中按 `location.host` 选择）：
+
+| 项 | 值 |
+| --- | --- |
+| client_id | `Xqp0kJBXWhwaTpB6` |
+| client_secret | `Xqp0kC5LIQcyGSdKPYSzshgLKHxo` |
+| package_name | `pan.xunlei.com` |
+| API base | `https://api-pan.xunlei.com/drive/v1` |
+
+凭据来源（登录成功后由 SSO 写入 localStorage）：
+
+- `credentials_Xqp0kJBXWhwaTpB6` = `{user_id, access_token, refresh_token}`
+- `captcha_Xqp0kJBXWhwaTpB6` = `{token, expires_at}`（300s 有效，仅写操作需要）
+- `device_id` / cookie `deviceid`
+- 设备指纹 `device_sign` 由浏览器内混淆函数计算，客户端拿不到，也不需要
+
+请求头：`user-agent`（桌面 Chrome）、`x-device-id`、`x-client-id`、`Authorization: Bearer <access_token>`，
+写操作再加 `x-captcha-token`。token 过期用 web 身份 refresh_token 授权刷新。
+
+区别与限制：
+
+- 读操作（列目录 `GET files`、`GET files/{id}` 取直链）**不需要** captcha；写操作
+  （上传 / 删除到回收站 / 移动 / 重命名等）需要 `x-captcha-token`，客户端无法计算
+  `captcha_sign`，因此 web 模式下写操作会直接提示「该操作需要网页验证码，请重新网页登录后再试」。
+- web 端的空间值不是固定的 `SPACE_BROWSER`，`rootSpace` 在登录后由 `probeRootSpace()`
+  依次尝试 `SPACE_BROWSER` / `SPACE_SAFE` / 空串探测确定，并随会话持久化。
+- 因此「网页登录」适合只做浏览 + 下载；要完整增删改，请用「密码登录」（App 身份）。

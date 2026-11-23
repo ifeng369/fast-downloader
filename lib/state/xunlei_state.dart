@@ -15,6 +15,12 @@ class XunleiState extends ChangeNotifier {
   static const _kUser = 'xunlei_user_id';
   static const _kUsername = 'xunlei_username';
 
+  /// 网页登录态（pan.xunlei.com）相关
+  static const _kWeb = 'xunlei_web_mode';
+  static const _kDevice = 'xunlei_device_id';
+  static const _kCaptcha = 'xunlei_web_captcha_token';
+  static const _kSpace = 'xunlei_root_space';
+
   static XunleiState? _instance;
   static XunleiState get I => _instance ??= XunleiState._();
 
@@ -50,18 +56,27 @@ class XunleiState extends ChangeNotifier {
       final refresh = await _read(_kRefresh);
       final user = await _read(_kUser);
       username = await _read(_kUsername);
-      // 设备 ID 与登录凭据绑定（对照 AList）：按 refresh_token 派生
+      final web = await _read(_kWeb);
+      final device = await _read(_kDevice);
+      final space = await _read(_kSpace);
+      client.webMode = web == '1';
+      client.webCaptchaToken = await _read(_kCaptcha);
+      if (space.isNotEmpty) client.rootSpace = space;
+      // 设备 ID 与登录凭据绑定：网页登录态用网页端绑定的 device_id，App 身份按凭据派生
       client.setTokens(
         access: access,
         refresh: refresh,
         user: user,
-        device: refresh.isNotEmpty
+        device: device.isNotEmpty
+            ? device
+            : refresh.isNotEmpty
             ? XunleiClient.deviceIdFor(refresh)
             : XunleiClient.deviceIdFor('$access$user'),
       );
       AppLogger.I.i(
         'xunlei',
-        '恢复登录态 access=${access.isNotEmpty} refresh=${refresh.isNotEmpty}',
+        '恢复登录态 access=${access.isNotEmpty} refresh=${refresh.isNotEmpty} '
+            'web=${client.webMode} space=${client.rootSpace}',
       );
       if (access.isNotEmpty && refresh.isNotEmpty) {
         // 后台续期验证
@@ -73,10 +88,20 @@ class XunleiState extends ChangeNotifier {
           notifyListeners();
         }
       }
+      if (client.webMode) {
+        // 网页登录态：根 space 由服务端决定，启动时重新探测一次
+        unawaited(_probeWebSpace());
+      }
       if (client.hasLogin) await refreshQuota();
     } catch (e) {
       AppLogger.I.e('xunlei', '恢复登录态失败: $e');
     }
+  }
+
+  /// 重新探测网页登录态的根 space（探测成功后落盘）
+  Future<void> _probeWebSpace() async {
+    final err = await client.probeRootSpace();
+    if (err == null) await _persist();
   }
 
   Future<String?> _autoRefresh() async {
@@ -95,6 +120,9 @@ class XunleiState extends ChangeNotifier {
   Future<String?> login(String account, String password) async {
     // 账号规范化（去掉 +86/空格等），设备 ID 与登录凭据绑定（md5(账号+密码)）
     final normalized = XunleiClient.normalizeAccount(account);
+    client.webMode = false;
+    client.webCaptchaToken = '';
+    client.rootSpace = XunleiClient.appRootSpace;
     client.deviceId = XunleiClient.deviceIdFor('$normalized$password');
     final err = await client.signin(normalized, password);
     if (err != null) {
@@ -105,6 +133,46 @@ class XunleiState extends ChangeNotifier {
     await _persist();
     _startRefresher();
     AppLogger.I.i('xunlei', '登录成功 user=${client.userId}');
+    await refreshQuota();
+    notifyListeners();
+    return null;
+  }
+
+  /// 网页登录：用应用内网页登录页拿到的凭据直接接管登录态
+  /// （access/refresh token 来自 pan.xunlei.com 的 localStorage）
+  Future<String?> loginWithWebSession({
+    required String accessToken,
+    required String refreshToken,
+    required String userId,
+    required String deviceId,
+    String captchaToken = '',
+  }) async {
+    final err = await client.initWebSession(
+      access: accessToken,
+      refresh: refreshToken,
+      user: userId,
+      device: deviceId.isNotEmpty
+          ? deviceId
+          : XunleiClient.deviceIdFor(refreshToken.isNotEmpty ? refreshToken : accessToken),
+      captcha: captchaToken,
+    );
+    if (err != null) {
+      AppLogger.I.e('xunlei', '网页登录态校验失败: $err');
+      // 探测失败时不要留下半登录态：清空凭据，返回失败原因
+      client.setTokens();
+      client.webMode = false;
+      client.rootSpace = XunleiClient.appRootSpace;
+      return err;
+    }
+    // 续期一次，确认 refresh_token 可用（失败不阻塞，access_token 仍有效）
+    final renew = await client.refresh();
+    if (renew != null) {
+      AppLogger.I.w('xunlei', '网页登录态续期失败: $renew');
+    }
+    username = null;
+    await _persist();
+    _startRefresher();
+    AppLogger.I.i('xunlei', '网页登录成功 user=${client.userId} space=${client.rootSpace}');
     await refreshQuota();
     notifyListeners();
     return null;
@@ -127,12 +195,24 @@ class XunleiState extends ChangeNotifier {
 
   Future<void> logout() async {
     client.setTokens();
+    client.webMode = false;
+    client.webCaptchaToken = '';
+    client.rootSpace = XunleiClient.appRootSpace;
     username = null;
     _totalSize = -1;
     _usedSize = -1;
     _refreshTimer?.cancel();
     _refreshTimer = null;
-    for (final k in [_kAccess, _kRefresh, _kUser, _kUsername]) {
+    for (final k in [
+      _kAccess,
+      _kRefresh,
+      _kUser,
+      _kUsername,
+      _kWeb,
+      _kDevice,
+      _kCaptcha,
+      _kSpace,
+    ]) {
       try {
         await _secure.delete(key: k);
       } catch (_) {}
@@ -176,7 +256,29 @@ class XunleiState extends ChangeNotifier {
     await _write(_kAccess, client.accessToken);
     await _write(_kRefresh, client.refreshToken);
     await _write(_kUser, client.userId);
-    if (username != null) await _write(_kUsername, username!);
+    await _write(_kWeb, client.webMode ? '1' : '0');
+    await _write(_kDevice, client.deviceId);
+    await _write(_kSpace, client.rootSpace);
+    if (client.webCaptchaToken.isEmpty) {
+      await _delete(_kCaptcha);
+    } else {
+      await _write(_kCaptcha, client.webCaptchaToken);
+    }
+    if (username != null) {
+      await _write(_kUsername, username!);
+    } else {
+      await _delete(_kUsername);
+    }
+  }
+
+  Future<void> _delete(String key) async {
+    try {
+      await _secure.delete(key: key);
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    } catch (_) {}
   }
 
   Future<String> _read(String key) async {

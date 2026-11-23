@@ -19,7 +19,8 @@ class Netdisk123LoginPage extends StatefulWidget {
 }
 
 class _Netdisk123LoginPageState extends State<Netdisk123LoginPage> {
-  int _tabIndex = 0;
+  /// 默认选中「网页登录」（第 3 个 Tab）
+  int _tabIndex = 2;
 
   @override
   Widget build(BuildContext context) {
