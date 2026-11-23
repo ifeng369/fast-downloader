@@ -3,7 +3,9 @@ import 'package:flutter_miuix/miuix.dart';
 
 import '../../api/netdisk123_client.dart';
 import '../../state/app_state.dart';
+import '../../state/download_manager.dart';
 import '../../state/download_service.dart';
+import '../../state/netdisk123_state.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/format.dart';
@@ -188,6 +190,99 @@ class _Netdisk123SharePageState extends State<Netdisk123SharePage> {
     }
   }
 
+  Future<void> _downloadSingle(Netdisk123File file) async {
+    setState(() => _downloading = true);
+    try {
+      final n = await _downloadFiles([file]);
+      _toast(n > 0 ? '已加入下载队列' : '取直链失败');
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  void _showFileActions(Netdisk123File file) {
+    MiuixActionSheet.show<String>(
+      context,
+      title: file.name,
+      actions: [
+        (
+          icon: Icons.download_rounded,
+          text: '立即下载',
+          value: 'download',
+          color: null
+        ),
+        (
+          icon: Icons.cloud_download_rounded,
+          text: '转存后下载',
+          value: 'save_download',
+          color: null
+        ),
+      ],
+    ).then((v) {
+      if (v == null) return;
+      switch (v) {
+        case 'download':
+          _downloadSingle(file);
+        case 'save_download':
+          _saveThenDownload(file);
+      }
+    });
+  }
+
+  /// 先转存到自己的网盘，再把转存后的文件加入下载任务
+  Future<void> _saveThenDownload(Netdisk123File file) async {
+    if (!Netdisk123State.I.isLoggedIn) {
+      _toast('请先登录 123 网盘');
+      return;
+    }
+    final client = Netdisk123State.I.client;
+    final app = AppState.I;
+    try {
+      final before = await client.listFiles(Netdisk123Client.rootParentId);
+      final beforeIds = before.map((e) => e.id).toSet();
+      await client.saveShareFiles(
+        shareKey: widget.uniId,
+        sharePwd: _pwd,
+        files: [file],
+      );
+      final after = await client.listFiles(Netdisk123Client.rootParentId);
+      var saved = after
+          .where((e) => !e.isDir && !beforeIds.contains(e.id))
+          .toList();
+      if (saved.isEmpty) {
+        saved =
+            after.where((e) => !e.isDir && e.name == file.name).toList();
+      }
+      if (saved.isEmpty) {
+        throw Netdisk123Exception(-1, '转存后在网盘里没有找到该文件');
+      }
+      saved.sort((a, b) => (int.tryParse(a.id) ?? 0)
+          .compareTo(int.tryParse(b.id) ?? 0));
+      final target = saved.last;
+      final url = await client.getDownloadUrl(target);
+      if (url.isEmpty) {
+        throw Netdisk123Exception(-1, '未获取到下载地址');
+      }
+      final base = await app.effectiveDownloadDir();
+      final err = await DownloadService.addDirectUrl(
+        url: url,
+        fileName: target.name,
+        cookie: '',
+        path: base,
+        maxConnections: app.netdisk123Connections,
+        batchTotal: 1,
+        referer: 'https://www.123pan.com/',
+        userAgent: Netdisk123Client.ua,
+      );
+      if (err != null) throw Netdisk123Exception(-1, err);
+      _toast('已转存并加入下载队列');
+      DownloadManager.I.startPolling();
+    } catch (e) {
+      AppLogger.I.e('netdisk123', '转存后下载失败 ${file.name}: $e');
+      _toast('转存后下载失败: $e');
+    }
+  }
+
   Future<void> _submitPwd() async {
     final v = _pwdController.text.trim();
     if (v.isEmpty) return;
@@ -326,18 +421,10 @@ class _Netdisk123SharePageState extends State<Netdisk123SharePage> {
           trailing: f.isDir
               ? const Icon(Icons.chevron_right)
               : IconButton(
-                  icon: const Icon(Icons.download_rounded),
-                  onPressed: () async {
-                    setState(() => _downloading = true);
-                    try {
-                      final n = await _downloadFiles([f]);
-                      _toast(n > 0 ? '已加入下载队列' : '取直链失败');
-                    } finally {
-                      if (mounted) setState(() => _downloading = false);
-                    }
-                  },
+                  icon: const Icon(Icons.more_horiz_rounded),
+                  onPressed: () => _showFileActions(f),
                 ),
-          onTap: f.isDir ? () => _openDir(f) : null,
+          onTap: f.isDir ? () => _openDir(f) : () => _showFileActions(f),
         );
       },
     );

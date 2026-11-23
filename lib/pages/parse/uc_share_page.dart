@@ -459,8 +459,14 @@ class _UcSharePageState extends State<UcSharePage> {
       actions: [
         (
           icon: Icons.download_rounded,
-          text: '直接下载（不转存）',
+          text: '立即下载',
           value: 'download',
+          color: null
+        ),
+        (
+          icon: Icons.cloud_download_rounded,
+          text: '转存后下载',
+          value: 'save_download',
           color: null
         ),
       ],
@@ -469,8 +475,61 @@ class _UcSharePageState extends State<UcSharePage> {
       switch (v) {
         case 'download':
           _downloadSingle(file);
+        case 'save_download':
+          _saveThenDownload(file);
       }
     });
+  }
+
+  /// 先转存到自己的网盘，再把转存后的文件加入下载任务
+  Future<void> _saveThenDownload(UcShareFile file) async {
+    if (!UcState.I.isLoggedIn) {
+      _toast('请先登录 UC 网盘');
+      return;
+    }
+    final client = _client;
+    try {
+      final before = await client.listFiles(UcClient.rootFid);
+      final beforeIds = before.map((e) => e.fid).toSet();
+      await client.saveShare(widget.session, [file], UcClient.rootFid);
+      final after = await client.listFiles(UcClient.rootFid);
+      var saved = after
+          .where((e) => !e.isDir && !beforeIds.contains(e.fid))
+          .toList();
+      if (saved.isEmpty) {
+        saved = after
+            .where((e) => !e.isDir && e.fileName == file.fileName)
+            .toList();
+      }
+      if (saved.isEmpty) {
+        throw UcException(-1, '转存后在网盘里没有找到该文件');
+      }
+      saved.sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
+      final target = saved.last;
+      final (infos, cookie) = await client.getDownloadInfo([target.fid]);
+      if (infos.isEmpty || infos.first.url.isEmpty) {
+        throw UcException(-1, '未获取到下载地址');
+      }
+      final info = infos.first;
+      final base = await AppState.I.effectiveDownloadDir();
+      final err = await DownloadService.addDirectUrl(
+        url: info.url,
+        fileName:
+            info.fileName.isNotEmpty ? info.fileName : file.fileName,
+        cookie: cookie,
+        path: base,
+        batchTotal: 1,
+        maxConnections: AppState.I.ucConnections,
+        referer: UcClient.referer,
+        userAgent: UcClient.uaPc,
+      );
+      if (err != null) throw UcException(-1, err);
+      _toast('已转存并加入下载队列');
+      DownloadManager.I.startPolling();
+    } catch (e) {
+      AppLogger.I.e('uc', '转存后下载失败 ${file.fileName}: $e');
+      _toast('转存后下载失败: $e');
+    }
   }
 
   void _toast(String msg) {

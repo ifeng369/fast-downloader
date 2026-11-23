@@ -356,6 +356,49 @@ class UcClient {
     });
   }
 
+  /// 转存分享文件到自己的网盘（网页端「保存到我的网盘」同一路径）。
+  ///
+  /// 服务端返回 `task_id` 时轮询 `/task` 直到 status=2（完成）/3（失败）。
+  Future<void> saveShare(
+    UcShareSession session,
+    List<UcShareFile> files,
+    String toPdirFid,
+  ) async {
+    if (files.isEmpty) return;
+    final data = await _post('$api/share/sharepage/save', data: {
+      'fid_list': files.map((e) => e.fid).toList(),
+      'fid_token_list': files.map((e) => e.fidToken).toList(),
+      'to_pdir_fid': toPdirFid,
+      'pwd_id': session.pwdId,
+      'stoken': session.stoken,
+      'pdir_fid': '0',
+      'scene': 'link',
+    });
+    final taskId = data is Map ? toStr(data['task_id']) : '';
+    if (taskId.isNotEmpty) await _waitTask(taskId);
+  }
+
+  /// 等待异步任务（转存/批量操作）完成
+  Future<void> _waitTask(String taskId, {int maxRetry = 120}) async {
+    for (var i = 0; i < maxRetry; i++) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      try {
+        final data = await _get('$api/task', params: {
+          'task_id': taskId,
+          'retry_index': i,
+        });
+        final status = data is Map ? toInt(data['status'], fallback: -1) : -1;
+        if (status == 2) return;
+        if (status == 3) throw UcException(-1, '转存任务失败');
+      } on UcException {
+        rethrow;
+      } catch (_) {
+        // 网络抖动继续等待
+      }
+    }
+    throw UcException(-1, '转存任务超时');
+  }
+
   static String _shareMessage(UcException e) {
     switch (e.code) {
       case 41008:

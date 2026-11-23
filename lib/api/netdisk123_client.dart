@@ -533,6 +533,53 @@ class Netdisk123Client {
     return files;
   }
 
+  /// 转存分享文件到自己的网盘（网页端「保存到我的网盘」同一路径）。
+  ///
+  /// `POST /b/api/restful/goapi/v1/file/copy/save`
+  /// body `{fileList:[{fileID,size,etag,type,parentFileID,fileName,driveID}],
+  ///        shareKey, sharePwd, currentLevel, superAdmin}`
+  /// `currentLevel`＝目标目录是否二级及以上（根目录 0，子目录 1），
+  /// 服务端偶尔报「转存ID无效」时取反重试一次。
+  Future<void> saveShareFiles({
+    required String shareKey,
+    required List<Netdisk123File> files,
+    String sharePwd = '',
+    String toParentId = rootParentId,
+  }) async {
+    final parent = int.tryParse(toParentId) ?? 0;
+    final list = <Map<String, dynamic>>[];
+    for (final f in files) {
+      if (f.isDir) continue;
+      final id = int.tryParse(f.id) ?? 0;
+      if (id <= 0) continue;
+      list.add({
+        'fileID': id,
+        'size': f.size,
+        'etag': f.etag,
+        'type': 0,
+        'parentFileID': parent,
+        'fileName': f.name,
+        'driveID': 0,
+      });
+    }
+    if (list.isEmpty) return;
+    final body = <String, dynamic>{
+      'fileList': list,
+      'shareKey': shareKey,
+      'sharePwd': sharePwd.isEmpty ? null : sharePwd,
+      'currentLevel': parent > 0 ? 1 : 0,
+      'superAdmin': null,
+    };
+    const url = '$_apiBase/restful/goapi/v1/file/copy/save';
+    try {
+      await _request('POST', url, body);
+    } on Netdisk123Exception catch (e) {
+      if (!e.message.contains('转存ID无效')) rethrow;
+      body['currentLevel'] = parent > 0 ? 0 : 1;
+      await _request('POST', url, body);
+    }
+  }
+
   static const _trashUrl = 'https://api.123278.com/a/api/file/trash';
 
   /// 删除（移入回收站）。与网页端一致：`/a/api/file/trash` + fileTrashInfoList/operation。
