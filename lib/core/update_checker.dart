@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_miuix/miuix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -189,32 +188,18 @@ class UpdateChecker {
   /// 正在检查/弹窗中：防止连点导致重复请求与弹窗叠加
   static bool _inFlight = false;
 
+  /// 检查更新是否进行中：入口菜单据此禁用（不弹 loading 浮层）
+  static final ValueNotifier<bool> checking = ValueNotifier<bool>(false);
+
   static Future<void> checkAndPrompt(
     BuildContext context, {
     bool manual = false,
   }) async {
     if (_inFlight) return;
     _inFlight = true;
-    var loadingShown = false;
+    checking.value = true;
     try {
-      if (manual) {
-        // 手动检查：先把「检查更新中…」显示出来，避免点了没反应
-        unawaited(
-          MiuixOverlayPanel.show(
-            context: context,
-            builder: (_) => const _UpdateLoadingDialog(),
-          ).catchError((Object _) {}),
-        );
-        loadingShown = true;
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-      }
       final update = await check();
-      if (loadingShown) {
-        MiuixOverlayPanel.hide();
-        loadingShown = false;
-        // 等浮层移除动画，避免紧接着的选择弹窗被一起关掉
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-      }
       if (!context.mounted) return;
       if (update == null) {
         if (manual) {
@@ -279,8 +264,8 @@ class UpdateChecker {
           MiuixToast.show(err == null ? '已加入下载任务：${target.name}' : err);
       }
     } finally {
-      if (loadingShown) MiuixOverlayPanel.hide();
       _inFlight = false;
+      checking.value = false;
     }
   }
 
@@ -313,35 +298,5 @@ class UpdateChecker {
       if (a[i] != b[i]) return a[i] > b[i];
     }
     return false;
-  }
-}
-
-/// 手动检查更新时的加载浮层（不可点击关闭）
-class _UpdateLoadingDialog extends StatelessWidget {
-  const _UpdateLoadingDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return MiuixOverlayDialog(
-      show: true,
-      content: MiuixDismissScope(
-        onDismissRequest: () {},
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: MiuixCircularProgressIndicator(size: 20, strokeWidth: 2),
-              ),
-              const SizedBox(width: 12),
-              MiuixText('检查更新中…', fontSize: 14),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

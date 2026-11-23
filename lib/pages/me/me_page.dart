@@ -311,12 +311,20 @@ class MePage extends StatelessWidget {
                 onClick: () => app.openAllFilesAccess()),
           ],
           const MiuixHorizontalDivider(),
-          arrowPref(
+          ValueListenableBuilder<bool>(
+            valueListenable: UpdateChecker.checking,
+            builder: (context, busy, _) => MiuixArrowPreference(
               title: '检查更新',
-              summary: '检查 GitHub Release 是否有新版本',
-              icon: Icons.system_update_rounded,
-              onClick: () =>
-                  UpdateChecker.checkAndPrompt(context, manual: true)),
+              summary: busy ? '正在检查…' : '检查 GitHub Release 是否有新版本',
+              startAction: leading(Icons.system_update_rounded),
+              insideMargin:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              enabled: !busy,
+              onClick: busy
+                  ? null
+                  : () => UpdateChecker.checkAndPrompt(context, manual: true),
+            ),
+          ),
           if (!kIsWeb && Platform.isWindows) ...[
             const MiuixHorizontalDivider(),
             arrowPref(
