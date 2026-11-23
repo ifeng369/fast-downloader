@@ -131,34 +131,10 @@ class XunleiClient {
   static const appId = '22062';
 
   static const _authBase = 'https://xluser-ssl.xunlei.com/v1';
-
-  /// App 身份（迅雷浏览器）云盘域名
   static const _driveBase = 'https://x-api-pan.xunlei.com/drive/v1';
 
-  // ---------------- Web 端（pan.xunlei.com）身份 ----------------
-
-  /// 网页登录态的云盘域名（与 App 身份不同）
-  static const _webDriveBase = 'https://api-pan.xunlei.com/drive/v1';
-
-  /// 网页版 OAuth 客户端（pan.xunlei.com 前端写死，按 location.host 选择）
-  static const webClientId = 'Xqp0kJBXWhwaTpB6';
-  static const webClientSecret = 'Xqp0kC5LIQcyGSdKPYSzshgLKHxo';
-  static const webPackageName = 'pan.xunlei.com';
-
-  /// 网页登录页的凭据（localStorage 键）
-  static const webCredentialsKey = 'credentials_$webClientId';
-  static const webCaptchaKey = 'captcha_$webClientId';
-
-  /// Web 身份请求 UA（桌面 Chrome，与网页登录环境保持一致）
-  static const webUserAgent =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
-
-  /// App 身份的浏览器网盘根目录 space
-  static const appRootSpace = 'SPACE_BROWSER';
-
-  /// 当前登录态的根目录 space：App 身份为 SPACE_BROWSER，网页身份登录后探测
-  String rootSpace = appRootSpace;
+  /// 浏览器网盘根目录 space
+  static const rootSpace = 'SPACE_BROWSER';
 
   /// 根目录 parent_id（浏览器版未配置 root_folder_id，传空字符串）
   static const rootParentId = '';
@@ -193,11 +169,6 @@ class XunleiClient {
   String deviceId = '';
   String captchaToken = '';
 
-  /// 网页登录态：token 来自 pan.xunlei.com（前端签名链算不出 App 的 captcha_sign，
-  /// 因此 web 模式下只读接口可用，写操作需要网页端现成的 captcha token）
-  bool webMode = false;
-  String webCaptchaToken = '';
-
   /// 风控验证：验证链接与人工验证后的密钥（review_panel 流程）
   String reviewUrl = '';
   String creditKey = '';
@@ -210,52 +181,11 @@ class XunleiClient {
     String refresh = '',
     String user = '',
     String device = '',
-    bool? web,
   }) {
     accessToken = access;
     refreshToken = refresh;
     userId = user;
     if (device.isNotEmpty) deviceId = device;
-    if (web != null) webMode = web;
-  }
-
-  /// 网页登录态：设置凭据并探测根目录 space，返回 null 表示可用
-  Future<String?> initWebSession({
-    required String access,
-    required String refresh,
-    required String user,
-    required String device,
-    String captcha = '',
-    String space = '',
-  }) async {
-    webMode = true;
-    reviewUrl = '';
-    creditKey = '';
-    captchaToken = '';
-    setTokens(access: access, refresh: refresh, user: user, device: device);
-    webCaptchaToken = captcha;
-    rootSpace = space.isNotEmpty ? space : appRootSpace;
-    return probeRootSpace();
-  }
-
-  /// 探测当前账号可用的根 space：网页身份按服务端返回的 space 取值，
-  /// 依次尝试常见取值，第一个能列出根目录的即为可用值。
-  Future<String?> probeRootSpace() async {
-    const candidates = [appRootSpace, 'SPACE_SAFE', ''];
-    XunleiException? last;
-    for (final space in candidates) {
-      try {
-        await listFiles(rootParentId, space: space);
-        rootSpace = space;
-        AppLogger.I.i('xunlei', 'web 根 space = "${space}"');
-        return null;
-      } on XunleiException catch (e) {
-        last = e;
-      } catch (e) {
-        last = XunleiException(-1, e.toString());
-      }
-    }
-    return '读取网盘根目录失败：${last?.message ?? '未知错误'}';
   }
 
   // ---------------- 工具 ----------------
@@ -295,27 +225,15 @@ class XunleiClient {
       'protocolVersion/301 platformversion/10 sdkVersion/$sdkVersion '
       'Oauth2Client/0.9 (Linux 4_9_337-perf-sn-uotan-gd9d488809c3d) (JAVA 0)';
 
-  Map<String, dynamic> _authHeaders() => webMode
-      ? {
-          'user-agent': webUserAgent,
-          'accept': 'application/json;charset=UTF-8',
-          'x-device-id': deviceId,
-          'x-client-id': webClientId,
-          if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-          if (webCaptchaToken.isNotEmpty) 'X-Captcha-Token': webCaptchaToken,
-        }
-      : {
-          'user-agent': buildUserAgent(deviceId),
-          'accept': 'application/json;charset=UTF-8',
-          'x-device-id': deviceId,
-          'x-client-id': clientId,
-          'x-client-version': clientVersion,
-          if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-          if (captchaToken.isNotEmpty) 'X-Captcha-Token': captchaToken,
-        };
-
-  /// 当前身份对应的云盘接口域名
-  String get _driveBaseUrl => webMode ? _webDriveBase : _driveBase;
+  Map<String, dynamic> _authHeaders() => {
+    'user-agent': buildUserAgent(deviceId),
+    'accept': 'application/json;charset=UTF-8',
+    'x-device-id': deviceId,
+    'x-client-id': clientId,
+    'x-client-version': clientVersion,
+    if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
+    if (captchaToken.isNotEmpty) 'X-Captcha-Token': captchaToken,
+  };
 
   Future<Map<String, dynamic>> _post(
     String url,
@@ -443,8 +361,8 @@ class XunleiClient {
       final map = await _post('$_authBase/auth/token', {
         'grant_type': 'refresh_token',
         'refresh_token': refreshToken,
-        'client_id': webMode ? webClientId : clientId,
-        'client_secret': webMode ? webClientSecret : clientSecret,
+        'client_id': clientId,
+        'client_secret': clientSecret,
       });
       final access = toStr(map['access_token']);
       if (access.isEmpty) return '续期失败，请重新登录';
@@ -459,11 +377,6 @@ class XunleiClient {
 
   /// 登录后刷新验证码 token（云盘请求返回 captcha_invalid 时调用）
   Future<void> _refreshCaptchaAtLogin(String action) async {
-    if (webMode) {
-      // web 身份的 captcha_sign 由网页端混淆 JS 实时计算，客户端算不出：
-      // 读接口不需要验证码，写接口失败时提示用户重新网页登录
-      return;
-    }
     try {
       final ts = DateTime.now().millisecondsSinceEpoch.toString();
       final map = await _post('$_authBase/shield/captcha/init', {
@@ -505,13 +418,6 @@ class XunleiClient {
           (e.rawError == 'captcha_invalid' ||
               e.message.contains('验证码') ||
               e.message.contains('captcha'))) {
-        if (webMode) {
-          throw XunleiException(
-            e.code,
-            '该操作需要网页验证码，请重新网页登录后再试',
-            rawError: e.rawError,
-          );
-        }
         // 验证码 token 过期：登录后刷新再重试
         await _refreshCaptchaAtLogin(actionOf('GET', url));
         return _get(url, params: params);
@@ -522,27 +428,26 @@ class XunleiClient {
 
   // ---------------- 云盘 ----------------
 
-  /// 文件列表（自动翻页）。根目录 space 由登录身份决定（见 [rootSpace]）。
+  /// 文件列表（自动翻页）。根目录 space 为 SPACE_BROWSER，子目录沿用文件自身的 space。
   Future<List<XunleiFile>> listFiles(
     String parentId, {
-    String? space,
+    String space = rootSpace,
   }) async {
-    final useSpace = space ?? rootSpace;
     final files = <XunleiFile>[];
     var pageToken = '';
     for (var page = 0; page < 100; page++) {
       final map = await _authGet(
-        '$_driveBaseUrl/files',
+        '$_driveBase/files',
         params: {
           'parent_id': parentId,
           'page_token': pageToken,
-          if (useSpace.isNotEmpty) 'space': useSpace,
+          'space': space,
           'filters': jsonEncode({
             'trashed': {'eq': false},
           }),
           'with': 'url',
-          if (!webMode) 'with_audit': true,
-          if (!webMode) 'thumbnail_size': 'SIZE_LARGE',
+          'with_audit': true,
+          'thumbnail_size': 'SIZE_LARGE',
         },
       );
       final list = map['files'];
@@ -560,10 +465,10 @@ class XunleiClient {
   /// 获取文件详情（含高速下载直链）
   Future<XunleiFile> getFileDetail(String id, {String space = ''}) async {
     final map = await _authGet(
-      '$_driveBaseUrl/files/$id',
+      '$_driveBase/files/$id',
       params: {
         '_magic': '2021',
-        if (space.isNotEmpty) 'space': space,
+        'space': space,
         'thumbnail_size': 'SIZE_LARGE',
         'with': 'url',
       },
@@ -575,14 +480,13 @@ class XunleiClient {
   ///
   /// 两个必须点（实测）：**带空 JSON body** 且 **带 `?space=` 查询参数**，
   /// 否则服务端会以"文件(夹)不存在"拒绝。
-  Future<void> deleteFiles(List<String> ids, {String? space}) async {
-    final useSpace = space ?? rootSpace;
+  Future<void> deleteFiles(List<String> ids, {String space = rootSpace}) async {
     for (final id in ids) {
       Future<Map<String, dynamic>> call() async => _parse(
         await _dio.request<dynamic>(
-          '$_driveBaseUrl/files/$id/trash',
+          '$_driveBase/files/$id/trash',
           data: const <String, dynamic>{},
-          queryParameters: useSpace.isEmpty ? null : {'space': useSpace},
+          queryParameters: {'space': space},
           options: Options(
             method: 'PATCH',
             headers: _authHeaders(),

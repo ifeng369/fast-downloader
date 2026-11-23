@@ -10,14 +10,12 @@ import 'package:webview_flutter_windows/webview_flutter_windows.dart';
 
 import '../../api/quark_client.dart';
 import '../../api/uc_client.dart';
-import '../../api/xunlei_client.dart';
 import '../../core/web_cookies.dart';
 import '../../state/app_state.dart';
 import '../../state/netdisk123_state.dart';
 import '../../state/uc_state.dart';
-import '../../state/xunlei_state.dart';
 
-enum WebLoginProvider { quark, uc, netdisk123, xunlei }
+enum WebLoginProvider { quark, uc, netdisk123 }
 
 const _desktopUa =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -54,23 +52,20 @@ class _WebLoginPageState extends State<WebLoginPage> {
 
   bool get _isUc => widget.provider == WebLoginProvider.uc;
   bool get _isPan123 => widget.provider == WebLoginProvider.netdisk123;
-  bool get _isXunlei => widget.provider == WebLoginProvider.xunlei;
 
-  /// 夸克/UC 走 cookie；123/迅雷 的登录态是页面里的 token
-  bool get _useCookie => !_isPan123 && !_isXunlei;
+  /// 夸克/UC 走 cookie；123 的登录态是页面里的 token
+  bool get _useCookie => !_isPan123;
 
   String get _title => switch (widget.provider) {
     WebLoginProvider.quark => '登录夸克网盘',
     WebLoginProvider.uc => '登录 UC 网盘',
     WebLoginProvider.netdisk123 => '登录 123 网盘',
-    WebLoginProvider.xunlei => '登录迅雷云盘',
   };
 
   String get _ua => switch (widget.provider) {
     WebLoginProvider.quark => QuarkClient.uaPc,
     WebLoginProvider.uc => UcClient.uaPc,
     WebLoginProvider.netdisk123 => _desktopUa,
-    WebLoginProvider.xunlei => _desktopUa,
   };
 
   String get _loginUrl => switch (widget.provider) {
@@ -78,8 +73,6 @@ class _WebLoginPageState extends State<WebLoginPage> {
     WebLoginProvider.uc => 'https://drive.uc.cn/',
     // 123 的账号中心登录页（登录成功后写 cookie sso-token，等价于 authorToken）
     WebLoginProvider.netdisk123 => 'https://user.123pan.cn/centerlogin',
-    // 迅雷网页版登录页：登录后凭据写在 localStorage[credentials_<clientId>]
-    WebLoginProvider.xunlei => 'https://pan.xunlei.com/login/',
   };
 
   /// 登录态 cookie 名（夸克/UC 都是 Alibaba 系，均用 __pus）
@@ -99,40 +92,20 @@ class _WebLoginPageState extends State<WebLoginPage> {
       'https://123pan.cn',
       'https://api.123278.com',
     ],
-    WebLoginProvider.xunlei => [
-      'https://pan.xunlei.com',
-      'https://xluser-ssl.xunlei.com',
-      'https://api-pan.xunlei.com',
-    ],
   };
 
   List<String> get _domainSuffixes => switch (widget.provider) {
     WebLoginProvider.uc => ['uc.cn'],
     WebLoginProvider.quark => ['quark.cn'],
     WebLoginProvider.netdisk123 => ['123pan.cn', '123pan.com', '123278.com'],
-    WebLoginProvider.xunlei => ['xunlei.com'],
   };
 
-  /// 在页面里读 token：
-  /// - 迅雷：SSO 把凭据存成 `localStorage['credentials_<clientId>']`（access_token/refresh_token/user_id），
-  ///   设备 ID 在 `localStorage.device_id` / cookie `deviceid`，验证码缓存在 `captcha_<clientId>`
-  /// - 123：`localStorage['authorToken']`
-  String get _storageScript => _isXunlei
-      ? "(function(){try{"
-            "var c=localStorage.getItem('${XunleiClient.webCredentialsKey}');"
-            "var cap=localStorage.getItem('${XunleiClient.webCaptchaKey}');"
-            "var dev=localStorage.getItem('device_id')||localStorage.getItem('deviceId')||'';"
-            "var o={};if(c){try{o=JSON.parse(c)||{}}catch(e){o={}}}"
-            "var capTok='';if(cap){try{var j=JSON.parse(cap);"
-            "if(j&&(!j.expires_at||Number(j.expires_at)*1000>Date.now()))capTok=String(j.token||'')}catch(e){}}"
-            "return JSON.stringify({access_token:String(o.access_token||''),"
-            "refresh_token:String(o.refresh_token||''),user_id:String(o.user_id||''),"
-            "device_id:String(dev||''),captcha:capTok})"
-            "}catch(e){return '{}'}})()"
-      : "(function(){try{var t='';"
-            "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
-            "if(k&&k.toLowerCase()==='authortoken')t=String(localStorage.getItem(k)||'')}"
-            "return JSON.stringify({token:t})}catch(e){return '{}'}})()";
+  /// 在页面里读 token：123 网盘读 `localStorage['authorToken']`
+  String get _storageScript =>
+      "(function(){try{var t='';"
+      "for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);"
+      "if(k&&k.toLowerCase()==='authortoken')t=String(localStorage.getItem(k)||'')}"
+      "return JSON.stringify({token:t})}catch(e){return '{}'}})()";
 
   @override
   void initState() {
@@ -267,20 +240,8 @@ class _WebLoginPageState extends State<WebLoginPage> {
   }
 
   /// 读当前页面可用的登录凭据（JSON 字符串）；没有可用凭据时返回空串。
-  /// 迅雷：localStorage.credentials_<clientId>（设备 ID 回退到 cookie `deviceid`）
   /// 123：localStorage `authorToken`，登录中心(user.123pan.cn)回退到 cookie `sso-token`
   Future<String> _readCredential() async {
-    if (_isXunlei) {
-      final map = _decode(await _readStorage());
-      if ((map['access_token'] ?? '').toString().isEmpty) return '';
-      if ((map['device_id'] ?? '').toString().isEmpty) {
-        map['device_id'] = _cookieValue(
-          await _readCookieHeader(),
-          'deviceid',
-        );
-      }
-      return jsonEncode(map);
-    }
     final map = <String, dynamic>{..._decode(await _readStorage())};
     if (_isPan123) {
       if ((map['token'] ?? '').toString().isEmpty) {
@@ -394,21 +355,6 @@ class _WebLoginPageState extends State<WebLoginPage> {
         err = _isUc
             ? await UcState.I.login(cookie)
             : await AppState.I.login(cookie);
-      } else if (_isXunlei) {
-        final raw = credential ?? await _readStorage();
-        final map = _decode(raw);
-        final access = (map['access_token'] ?? '').toString();
-        if (access.isEmpty) {
-          _setStatus('还没有读到迅雷登录凭据，请先在页面里完成登录');
-          return;
-        }
-        err = await XunleiState.I.loginWithWebSession(
-          accessToken: access,
-          refreshToken: (map['refresh_token'] ?? '').toString(),
-          userId: (map['user_id'] ?? '').toString(),
-          deviceId: (map['device_id'] ?? '').toString(),
-          captchaToken: (map['captcha'] ?? '').toString(),
-        );
       } else {
         final raw = credential ?? await _readStorage();
         final token = (_decode(raw)['token'] ?? '').toString();

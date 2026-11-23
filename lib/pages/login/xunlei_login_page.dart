@@ -7,11 +7,11 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../state/xunlei_state.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/miuix_common.dart';
-import 'web_login_page.dart';
 import 'xunlei_review_page.dart';
 
-/// 迅雷云盘登录页（网页登录 + 账号密码登录两个 Tab）
+/// 迅雷云盘账号密码登录页（含风控短信验证流程）
 class XunleiLoginPage extends StatefulWidget {
   const XunleiLoginPage({super.key});
 
@@ -20,117 +20,6 @@ class XunleiLoginPage extends StatefulWidget {
 }
 
 class _XunleiLoginPageState extends State<XunleiLoginPage> {
-  /// 默认选中「网页登录」（第 2 个 Tab）
-  int _tabIndex = 1;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = MiuixTheme.of(context).colors;
-    return MiuixScaffold(
-      topBar: MiuixTopAppBar(
-        title: '登录迅雷云盘',
-        navigationIcon: MiuixIconButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-          child: MiuixIcon(
-            icon: Icons.arrow_back_ios_new_rounded,
-            tint: colors.onSurfaceContainer,
-            size: 20,
-          ),
-        ),
-      ),
-      content: (padding) => Padding(
-        padding: padding,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: MiuixTabRow(
-                tabs: const ['密码登录', '网页登录'],
-                selectedTabIndex: _tabIndex,
-                onTabSelected: (i) => setState(() => _tabIndex = i),
-              ),
-            ),
-            Expanded(
-              child: IndexedStack(
-                index: _tabIndex,
-                children: const [
-                  _PasswordLoginView(),
-                  _WebLoginView(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 网页登录：应用内打开迅雷网页版登录页，登录后自动读取登录凭据
-class _WebLoginView extends StatelessWidget {
-  const _WebLoginView();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = MiuixTheme.of(context).colors;
-    final supported = !kIsWeb && (Platform.isAndroid || Platform.isWindows);
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        MiuixText(
-          supported
-              ? '在应用内打开迅雷云盘网页版登录页，登录成功后会自动读取登录凭据，无需手动复制。'
-              : '当前平台不支持自动读取登录凭据，请使用「密码登录」。',
-          color: colors.onSurfaceSecondary,
-          fontSize: 12,
-        ),
-        const SizedBox(height: 20),
-        if (supported)
-          MiuixButton(
-            onPressed: () async {
-              final ok = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      const WebLoginPage(provider: WebLoginProvider.xunlei),
-                ),
-              );
-              if (ok == true && context.mounted) {
-                Navigator.of(context).pop(true);
-              }
-            },
-            colors: MiuixButtonColors(
-              color: colors.primary,
-              disabledColor: colors.primary,
-              contentColor: Colors.white,
-              disabledContentColor: Colors.white,
-            ),
-            child: const MiuixText(
-              '打开网页登录',
-              color: Colors.white,
-              fontSize: 15,
-            ),
-          ),
-        const SizedBox(height: 14),
-        MiuixText(
-          '提示：登录凭据仅保存在本机；退出登录时会一并清理网页登录缓存。',
-          color: colors.onSurfaceSecondary,
-          fontSize: 11,
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-}
-
-/// 账号密码登录（含风控短信验证流程）
-class _PasswordLoginView extends StatefulWidget {
-  const _PasswordLoginView();
-
-  @override
-  State<_PasswordLoginView> createState() => _PasswordLoginViewState();
-}
-
-class _PasswordLoginViewState extends State<_PasswordLoginView> {
   final _account = TextEditingController();
   final _password = TextEditingController();
   bool _obscure = true;
@@ -254,82 +143,98 @@ class _PasswordLoginViewState extends State<_PasswordLoginView> {
   @override
   Widget build(BuildContext context) {
     final colors = MiuixTheme.of(context).colors;
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        MiuixText(
-          '使用迅雷账号（手机号/邮箱）登录，登录后可浏览网盘文件并使用多线程不限速下载。',
-          color: colors.onSurfaceSecondary,
-          fontSize: 12,
-        ),
-        const SizedBox(height: 20),
-        MiuixTextField(
-          controller: _account,
-          keyboardType: TextInputType.emailAddress,
-          label: '手机号 / 邮箱',
-          useLabelAsPlaceholder: true,
-          singleLine: true,
-          leadingIcon: MiuixIcon(
-            icon: Icons.person_outline_rounded,
-            tint: colors.onSurfaceSecondary,
+    return MiuixScaffold(
+      topBar: MiuixTopAppBar(
+        title: '登录迅雷云盘',
+        navigationIcon: MiuixIconButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+          child: MiuixIcon(
+            icon: Icons.arrow_back_ios_new_rounded,
+            tint: colors.onSurfaceContainer,
             size: 20,
           ),
         ),
-        const SizedBox(height: 14),
-        MiuixTextField(
-          controller: _password,
-          obscureText: _obscure,
-          label: '密码',
-          useLabelAsPlaceholder: true,
-          singleLine: true,
-          onSubmitted: (_) => _submit(),
-          leadingIcon: MiuixIcon(
-            icon: Icons.lock_outline_rounded,
-            tint: colors.onSurfaceSecondary,
-            size: 20,
-          ),
-          trailingIcon: MiuixIconButton(
-            onPressed: () => setState(() => _obscure = !_obscure),
-            child: MiuixIcon(
-              icon: _obscure
-                  ? Icons.visibility_off_rounded
-                  : Icons.visibility_rounded,
-              tint: colors.onSurfaceSecondary,
-              size: 20,
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            MiuixText(
+              '使用迅雷账号（手机号/邮箱）登录，登录后可浏览网盘文件并使用多线程不限速下载。',
+              color: colors.onSurfaceSecondary,
+              fontSize: 12,
             ),
-          ),
+            const SizedBox(height: 20),
+            MiuixTextField(
+              controller: _account,
+              keyboardType: TextInputType.emailAddress,
+              label: '手机号 / 邮箱',
+              useLabelAsPlaceholder: true,
+              singleLine: true,
+              leadingIcon: MiuixIcon(
+                icon: Icons.person_outline_rounded,
+                tint: colors.onSurfaceSecondary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(height: 14),
+            MiuixTextField(
+              controller: _password,
+              obscureText: _obscure,
+              label: '密码',
+              useLabelAsPlaceholder: true,
+              singleLine: true,
+              onSubmitted: (_) => _submit(),
+              leadingIcon: MiuixIcon(
+                icon: Icons.lock_outline_rounded,
+                tint: colors.onSurfaceSecondary,
+                size: 20,
+              ),
+              trailingIcon: MiuixIconButton(
+                onPressed: () => setState(() => _obscure = !_obscure),
+                child: MiuixIcon(
+                  icon: _obscure
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                  tint: colors.onSurfaceSecondary,
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            MiuixButton(
+              onPressed: _submitting ? null : _submit,
+              colors: MiuixButtonColors(
+                color: colors.primary,
+                disabledColor: colors.primary,
+                contentColor: Colors.white,
+                disabledContentColor: Colors.white,
+              ),
+              child: _submitting
+                  ? const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: MiuixCircularProgressIndicator(
+                        size: 16,
+                        colors: MiuixProgressIndicatorColors(
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: Colors.white,
+                          backgroundColor: Colors.white24,
+                        ),
+                      ),
+                    )
+                  : MiuixText('登录', color: Colors.white, fontSize: 15),
+            ),
+            const SizedBox(height: 14),
+            MiuixText(
+              '提示：登录仅用于获取迅雷云盘下载直链，账号信息仅保存在本机。',
+              color: colors.onSurfaceSecondary,
+              fontSize: 11,
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
-        const SizedBox(height: 24),
-        MiuixButton(
-          onPressed: _submitting ? null : _submit,
-          colors: MiuixButtonColors(
-            color: colors.primary,
-            disabledColor: colors.primary,
-            contentColor: Colors.white,
-            disabledContentColor: Colors.white,
-          ),
-          child: _submitting
-              ? const Padding(
-                  padding: EdgeInsets.all(14),
-                  child: MiuixCircularProgressIndicator(
-                    size: 16,
-                    colors: MiuixProgressIndicatorColors(
-                      foregroundColor: Colors.white,
-                      disabledForegroundColor: Colors.white,
-                      backgroundColor: Colors.white24,
-                    ),
-                  ),
-                )
-              : MiuixText('登录', color: Colors.white, fontSize: 15),
-        ),
-        const SizedBox(height: 14),
-        MiuixText(
-          '提示：登录仅用于获取迅雷云盘下载直链，账号信息仅保存在本机。',
-          color: colors.onSurfaceSecondary,
-          fontSize: 11,
-          textAlign: TextAlign.center,
-        ),
-      ],
+      ),
     );
   }
 }

@@ -329,36 +329,25 @@ User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; M2004J7AC Build/SP1A.210812.016)
 - pan.xunlei.com 前端 JS 静态分析：`getFileInfo(usage)`、`ts_downloader`、下载引擎弹窗
 - AList PR #8342：账号密码登录修复 + creditkey 风控流程说明
 
-## 11. 「网页登录」模式实现记录（web 身份）
+## 11. 为什么不做「网页登录」（web 身份结论，实测）
 
-App 身份（`SPACE_BROWSER` + App UA + captcha_sign）之外，本项目还支持直接从
-`https://pan.xunlei.com/login/` 的网页登录态接管会话。相关代码：
-`XunleiClient(webMode)`、`XunleiState.loginWithWebSession`、`WebLoginPage(provider: xunlei)`。
+用 `pan.xunlei.com` 真实登录态（WebView2 里取到的 `credentials_Xqp0kJBXWhwaTpB6`、
+`captcha_Xqp0kJBXWhwaTpB6`、`deviceid`）直接打 `api-pan.xunlei.com` 实测：
 
-网页端身份（线上 JS `utils-initial` 中按 `location.host` 选择）：
-
-| 项 | 值 |
+| 结论 | 证据 |
 | --- | --- |
-| client_id | `Xqp0kJBXWhwaTpB6` |
-| client_secret | `Xqp0kC5LIQcyGSdKPYSzshgLKHxo` |
-| package_name | `pan.xunlei.com` |
-| API base | `https://api-pan.xunlei.com/drive/v1` |
+| 所有云盘接口都必须带 `X-Captcha-Token` | 不带 → `400 captcha_invalid`（`captcha_token is empty`）；连 `GET files` 列目录也是 |
+| captcha 令牌按「设备 + action」绑定 | 列目录的 token 拿去 `GET files/{id}` 取直链 → `captcha_invalid` |
+| 令牌绑定 client_id，不能跨身份 | App 身份签的 token + web Bearer → `captcha_invalid`（client_id 不匹配） |
+| 令牌约 25~30 分钟后失效 | 同一 token 24 分钟仍可用，31 分钟后再列目录即失效 |
+| 令牌只能由网页端混淆运行时现场签发 | `captcha_sign = md5 链(签名盐)`；盐来自内网 `risk-account-ssl.office.k8s.xunlei.cn`（公网超时），备选是本地 wasm `xlmPromise`，均无法移植；伪造 sign 调 `/v1/shield/captcha/init` → `invalid captcha_sign` |
 
-凭据来源（登录成功后由 SSO 写入 localStorage）：
+因此 web 身份**能登录、能列目录（约半小时），但取不到下载直链**，对下载器没有意义。
+故不提供迅雷「网页登录」入口，只保留「密码登录（App 身份）+ 风控 review」这条完整链路。
+（历史提交 `e7c3327` 移除过一次，本次因默认改成网页登录而重新引入，实测后再次移除。）
 
-- `credentials_Xqp0kJBXWhwaTpB6` = `{user_id, access_token, refresh_token}`
-- `captcha_Xqp0kJBXWhwaTpB6` = `{token, expires_at}`（300s 有效，仅写操作需要）
-- `device_id` / cookie `deviceid`
-- 设备指纹 `device_sign` 由浏览器内混淆函数计算，客户端拿不到，也不需要
-
-请求头：`user-agent`（桌面 Chrome）、`x-device-id`、`x-client-id`、`Authorization: Bearer <access_token>`，
-写操作再加 `x-captcha-token`。token 过期用 web 身份 refresh_token 授权刷新。
-
-区别与限制：
-
-- 读操作（列目录 `GET files`、`GET files/{id}` 取直链）**不需要** captcha；写操作
-  （上传 / 删除到回收站 / 移动 / 重命名等）需要 `x-captcha-token`，客户端无法计算
-  `captcha_sign`，因此 web 模式下写操作会直接提示「该操作需要网页验证码，请重新网页登录后再试」。
-- web 端的空间值不是固定的 `SPACE_BROWSER`，`rootSpace` 在登录后由 `probeRootSpace()`
-  依次尝试 `SPACE_BROWSER` / `SPACE_SAFE` / 空串探测确定，并随会话持久化。
-- 因此「网页登录」适合只做浏览 + 下载；要完整增删改，请用「密码登录」（App 身份）。
+网页端身份常量（备查，勿再用于取直链）：client_id `Xqp0kJBXWhwaTpB6`、
+client_secret `Xqp0kC5LIQcyGSdKPYSzshgLKHxo`、package `pan.xunlei.com`、
+API base `https://api-pan.xunlei.com/drive/v1`、凭据键 `credentials_<clientId>`、
+验证码键 `captcha_<clientId>`、设备键 `deviceid`（值形如 `wdi10.<64hex>`）、
+web 根目录 space 为空串。
