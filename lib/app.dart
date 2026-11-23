@@ -267,7 +267,17 @@ class _RootPageState extends State<RootPage> {
           index: _index,
           onTap: (i) => setState(() => _index = i),
         ),
-        content: (_) => _AnimatedPageView(index: _index, children: _pages),
+        content: (padding) => Padding(
+          // 底部导航栏高度由脚手架回传：内容需要避开导航栏，否则列表最后一项会被压住
+          // （页面内的 SafeArea 只管状态栏/左右，底部安全区由导航栏自身包含，
+          //   这里去掉页面的底部安全区，避免重复留白）
+          padding: EdgeInsets.only(bottom: padding.bottom),
+          child: MediaQuery.removePadding(
+            context: context,
+            removeBottom: true,
+            child: _AnimatedPageView(index: _index, children: _pages),
+          ),
+        ),
       ),
     );
   }
