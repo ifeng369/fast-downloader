@@ -39,8 +39,8 @@ class AppUpdate {
 
 /// 检查更新：读取 Release 附带的 `latest.json`（不依赖 GitHub API，避免匿名限流 403）。
 ///
-/// 直连 `https://github.com/<repo>/releases/latest/download/latest.json`，
-/// 失败再走 `https://gh.ifeng369.top/<原始链接>` 代理。
+/// **默认走 `https://gh.ifeng369.top/<原始链接>` 代理**（国内直连 GitHub 经常不通），
+/// 代理失败再回退直连 `https://github.com/<repo>/releases/latest/download/latest.json`。
 class UpdateChecker {
   UpdateChecker._();
 
@@ -76,9 +76,10 @@ class UpdateChecker {
 
   static Future<AppUpdate?> check() async {
     lastError = null;
-    // 先直连，失败再走代理；两者都是静态文件，不消耗 GitHub API 配额
+    // 默认走代理（国内直连 GitHub 经常不通），代理失败再回退直连；
+    // 两者都是静态文件，不消耗 GitHub API 配额
     String? body;
-    for (final url in [_latestJsonUrl, proxyUrl(_latestJsonUrl)]) {
+    for (final url in [proxyUrl(_latestJsonUrl), _latestJsonUrl]) {
       body = await _fetchText(url);
       if (body != null) break;
     }
@@ -86,6 +87,9 @@ class UpdateChecker {
       lastError ??= '无法连接 GitHub 或代理，请检查网络';
       return null;
     }
+    // 中途某一路失败但另一路拿到了内容（如代理挂了回退直连），
+    // 不能把 lastError 留着，否则「已是最新」会被误报成「检查失败」
+    lastError = null;
     final info = parseLatestJson(body);
     if (info == null) {
       lastError = 'latest.json 内容不正确';
@@ -226,16 +230,16 @@ class UpdateChecker {
         context,
         title: '发现新版本 ${update.version}',
         options: [
-          if (asset != null) 'direct',
           if (asset != null) 'proxy',
+          if (asset != null) 'direct',
           'open',
           'later',
           'skip',
         ],
-        current: asset != null ? 'direct' : 'open',
+        current: asset != null ? 'proxy' : 'open',
         labelOf: (value) => switch (value) {
-          'direct' => '直接下载（加入下载任务）',
           'proxy' => '代理下载（gh.ifeng369.top 加速）',
+          'direct' => '直接下载（GitHub 直连）',
           'open' => '打开 GitHub 下载页',
           'skip' => '此次更新不再提醒',
           _ => '稍后提醒',
@@ -260,10 +264,6 @@ class UpdateChecker {
             fileName: target.name,
             cookie: '',
             referer: 'https://github.com/',
-            // gh 代理不实现 Range（Range 请求仍返回 200 全量），
-            // 多线程分块会失败 → 代理下载强制单连接
-            connections: viaProxy ? 1 : null,
-            maxConnections: viaProxy ? 1 : null,
           );
           if (viaProxy && err != null) {
             // 代理不可用/不稳定：自动回退直连
