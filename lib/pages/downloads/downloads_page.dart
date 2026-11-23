@@ -384,9 +384,9 @@ class _DownloadsPageState extends State<DownloadsPage>
     final colors = MiuixTheme.of(context).colors;
 
     final card = MiuixCard(
-      onPressed: () {
-        if (_selectMode) _toggleSelect(task);
-      },
+      // 非多选态不挂 onPressed：否则卡片的 Tap 手势会在手势竞技场里先赢，
+      // 外层 GestureDetector 的 onDoubleTap 永远收不到事件（表现为双击没反应）
+      onPressed: _selectMode ? () => _toggleSelect(task) : null,
       onLongPress: _selectMode ? null : () => _enterSelectMode(task),
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -563,11 +563,11 @@ class _DownloadsPageState extends State<DownloadsPage>
     }
   }
 
-  /// 在系统文件管理器里打开任务所在目录（Windows 会选中该文件）
+  /// 在系统文件管理器里直接打开任务所在目录（不选中文件）
   ///
-  /// 两个坑（都会让 explorer 退回默认文件夹，表现为「打开了桌面」）：
-  /// 1. `/select,` 必须和路径拼成**同一个参数**，中间不能有空格；
-  /// 2. 路径分隔符要统一成反斜杠（引擎回传的是正斜杠）。
+  /// 之前用 `explorer.exe /select,<完整路径>` 选中文件，实测在部分机器上
+  /// explorer 会忽略 `/select` 退回默认文件夹（表现为「打开了桌面」）。
+  /// 现在只把目录交给 explorer，最稳。
   Future<void> _openFolder(GopeedTask task) async {
     final downloadDir = await AppState.I.effectiveDownloadDir();
     final filePath = await _resolveTaskFile(task);
@@ -591,9 +591,13 @@ class _DownloadsPageState extends State<DownloadsPage>
         '打开文件夹: 文件=${filePath ?? "未找到"} 目录=$dir 下载目录=$downloadDir');
     try {
       if (Platform.isWindows) {
-        final sel = filePath?.replaceAll('/', '\\');
-        await Process.start('explorer.exe',
-            [sel != null ? '/select,$sel' : dir.replaceAll('/', '\\')]);
+        // 统一反斜杠：引擎回传的路径是正斜杠，explorer 解析不了
+        final d = dir.replaceAll('/', '\\');
+        try {
+          await Process.start('explorer.exe', [d]);
+        } catch (_) {
+          await Process.start('cmd.exe', ['/c', 'start', '', d]);
+        }
       } else if (Platform.isMacOS) {
         await Process.start('open', filePath != null ? ['-R', filePath] : [dir]);
       } else if (Platform.isLinux) {
