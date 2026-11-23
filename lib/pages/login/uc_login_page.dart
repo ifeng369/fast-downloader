@@ -120,18 +120,10 @@ class _CookieLoginViewState extends State<_CookieLoginView> {
               contentColor: Colors.white,
               disabledContentColor: Colors.white,
             ),
-            child: _submitting
-                ? const Padding(
-                    padding: EdgeInsets.all(14),
-                    child: MiuixCircularProgressIndicator(
-                        size: 16,
-                        colors: MiuixProgressIndicatorColors(
-                          foregroundColor: Colors.white,
-                          disabledForegroundColor: Colors.white,
-                          backgroundColor: Colors.white24,
-                        )),
-                  )
-                : MiuixText('登录', color: Colors.white, fontSize: 15),
+            child: MiuixLoadingSwitcher(
+              loading: _submitting,
+              child: MiuixText('登录', color: Colors.white, fontSize: 15),
+            ),
           ),
         ],
       ),

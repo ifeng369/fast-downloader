@@ -339,18 +339,10 @@ class _UcSharePageState extends State<UcSharePage> {
                 contentColor: Colors.white,
                 disabledContentColor: Colors.white,
               ),
-              child: _downloading
-                  ? const Padding(
-                      padding: EdgeInsets.all(14),
-                      child: MiuixCircularProgressIndicator(
-                          size: 16,
-                          colors: MiuixProgressIndicatorColors(
-                            foregroundColor: Colors.white,
-                            disabledForegroundColor: Colors.white,
-                            backgroundColor: Colors.white24,
-                          )),
-                    )
-                  : MiuixText('下载($count)', color: Colors.white, fontSize: 14),
+              child: MiuixLoadingSwitcher(
+                loading: _downloading,
+                child: MiuixText('下载($count)', color: Colors.white, fontSize: 14),
+              ),
             ),
           ],
         ),

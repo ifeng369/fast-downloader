@@ -447,18 +447,11 @@ class _ParsePageState extends State<ParsePage> {
                     contentColor: Colors.white,
                     disabledContentColor: Colors.white,
                   ),
-                  child: _parsing
-                      ? const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: MiuixCircularProgressIndicator(
-                              size: 18,
-                              colors: MiuixProgressIndicatorColors(
-                                foregroundColor: Colors.white,
-                                disabledForegroundColor: Colors.white,
-                                backgroundColor: Colors.white24,
-                              )),
-                        )
-                      : MiuixText('开始解析', color: Colors.white, fontSize: 14),
+                  child: MiuixLoadingSwitcher(
+                    loading: _parsing,
+                    indicatorSize: 18,
+                    child: MiuixText('开始解析', color: Colors.white, fontSize: 14),
+                  ),
                 ),
               ),
             ],

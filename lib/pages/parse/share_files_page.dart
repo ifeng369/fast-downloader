@@ -279,18 +279,10 @@ class _ShareFilesPageState extends State<ShareFilesPage> {
                 contentColor: Colors.white,
                 disabledContentColor: Colors.white,
               ),
-              child: _busy
-                  ? const Padding(
-                      padding: EdgeInsets.all(14),
-                      child: MiuixCircularProgressIndicator(
-                          size: 16,
-                          colors: MiuixProgressIndicatorColors(
-                            foregroundColor: Colors.white,
-                            disabledForegroundColor: Colors.white,
-                            backgroundColor: Colors.white24,
-                          )),
-                    )
-                  : MiuixText('下载($count)', color: Colors.white, fontSize: 14),
+              child: MiuixLoadingSwitcher(
+                loading: _busy,
+                child: MiuixText('下载($count)', color: Colors.white, fontSize: 14),
+              ),
             ),
           ],
         ),

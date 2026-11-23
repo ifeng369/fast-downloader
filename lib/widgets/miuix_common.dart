@@ -24,6 +24,48 @@ class MiuixToast {
   }
 }
 
+/// 按钮内的 loading 内容。
+///
+/// 旧写法在 loading 时用 `Padding + 进度圈` 替换掉文字，内容尺寸从「文字」
+/// 变成「14*2 + 圈」，按钮会因此变大变小。这里改为文字占位（透明）+
+/// 进度圈居中叠加，Stack 尺寸始终由文字决定，按钮尺寸不变。
+class MiuixLoadingSwitcher extends StatelessWidget {
+  const MiuixLoadingSwitcher({
+    super.key,
+    required this.loading,
+    required this.child,
+    this.indicatorSize = 16,
+    this.indicatorColor = Colors.white,
+    this.indicator,
+  });
+
+  final bool loading;
+  final Widget child;
+  final double indicatorSize;
+  final Color indicatorColor;
+  final Widget? indicator;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Opacity(opacity: loading ? 0 : 1, child: child),
+        if (loading)
+          indicator ??
+              MiuixCircularProgressIndicator(
+                size: indicatorSize,
+                colors: MiuixProgressIndicatorColors(
+                  foregroundColor: indicatorColor,
+                  disabledForegroundColor: indicatorColor,
+                  backgroundColor: indicatorColor.withValues(alpha: 0.24),
+                ),
+              ),
+      ],
+    );
+  }
+}
+
 /// 弹出层必备的 Material 祖先：Flutter 的 Text/TextField 在找不到
 /// `Material` 祖先时会画出黄色双下划线（debug 兜底）。所有经 Overlay
 /// 插入的内容都必须包一层，与库内 MiuixPopupHost 的 _MiuixHostedEntry、
