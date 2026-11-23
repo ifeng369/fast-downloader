@@ -11,6 +11,10 @@ on:
         description: '构建全部 ABI（armv7 / x86_64 / 通用包）；默认只出 arm64'
         type: boolean
         default: false
+      publish:
+        description: '构建完成后发布 Release（手动跑一般只需产物，可关掉）'
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.ref }}
@@ -34,7 +38,25 @@ jobs:
           echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
           echo "Building version: $VER"
 
+      # libgopeed.aar（Gopeed 的 Go 内核，约 15MB）随仓库提交，tag 构建无需再编译。
+      # actions/cache 的缓存作用域是 ref，tag 之间不共享，靠缓存每次发版都会冷编译
+      # （gomobile bind 约 4-5 分钟），所以改为一律用仓库里的产物；
+      # 升级 GOPEED_VERSION 时删掉该文件即可，CI 会重新编译并上传 artifact 供提交入库。
+      - name: Check libgopeed.aar
+        id: aar
+        shell: bash
+        run: |
+          if [ -f android/app/libs/libgopeed.aar ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            ls -lh android/app/libs/libgopeed.aar
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::仓库内缺少 libgopeed.aar，本次现场编译（约 4-5 分钟），产物会作为 artifact 上传，请提交入库"
+          fi
+
       - name: Setup Go
+        # 仅当仓库里没有 libgopeed.aar（升级 GOPEED_VERSION）时才需要现场编译
+        if: steps.aar.outputs.exists != 'true'
         uses: actions/setup-go@v6
         with:
           # gomobile 最新版要求 Go >= 1.26
@@ -57,6 +79,7 @@ jobs:
           cache: true
 
       - name: Cache gopeed source
+        if: steps.aar.outputs.exists != 'true'
         uses: actions/cache@v5
         with:
           path: /tmp/gopeed-src
@@ -78,29 +101,30 @@ jobs:
             echo "slug=arm64" >> "$GITHUB_OUTPUT"
           fi
 
-      # gomobile bind 约 4-5 分钟（4 ABI）/ 约 2 分钟（仅 arm64）：按版本+ABI 缓存
-      - name: Restore libgopeed.aar
-        id: aar
-        uses: actions/cache@v5
-        with:
-          path: android/app/libs/libgopeed.aar
-          key: libgopeed-aar-${{ vars.GOPEED_VERSION || 'v1.9.3' }}-${{ steps.abi.outputs.slug }}
-
       - name: Build libgopeed.aar
-        if: steps.aar.outputs.cache-hit != 'true'
+        if: steps.aar.outputs.exists != 'true'
         run: bash scripts/build_libgopeed.sh
         env:
           GOPEED_VERSION: ${{ vars.GOPEED_VERSION || 'v1.9.3' }}
           GOPEED_TARGETS: ${{ steps.abi.outputs.targets }}
 
+      - name: Upload libgopeed.aar（重建后回传，便于提交入库）
+        if: steps.aar.outputs.exists != 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: libgopeed-aar
+          path: android/app/libs/libgopeed.aar
+          if-no-files-found: error
+
       # Gradle 依赖/编译缓存：冷编译可省 1-3 分钟
+      # key 只含 gradle 配置（不含 pubspec.lock）：改依赖后仍能命中，避免每次重建整块缓存
       - name: Cache gradle
         uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
 
@@ -327,6 +351,8 @@ jobs:
 
   publish-release:
     needs: [build-android, build-windows]
+    # 手动运行时默认只出产物，不覆盖已有 Release
+    if: github.event_name == 'push' || inputs.publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
