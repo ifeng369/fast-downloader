@@ -33,10 +33,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Read app version
+      # 版本号以 tag 为唯一来源：v1.3.19 -> versionName 1.3.19，versionCode 取 run_number（单调递增）。
+      # 非 tag 构建（推 main 只为预热缓存）保持 pubspec.yaml 原值。
+      - name: Resolve version
         id: ver
         shell: bash
         run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            NAME="${GITHUB_REF_NAME#v}"
+            CODE="${GITHUB_RUN_NUMBER}"
+            sed -i -E "s/^version:.*/version: ${NAME}+${CODE}/" pubspec.yaml
+            echo "tag 驱动版本: ${NAME}+${CODE}"
+          fi
           VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | tr -d '\r')
           echo "app_version=$VER" >> "$GITHUB_OUTPUT"
           echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
@@ -291,9 +299,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Read app version
+      # 与 build-android 一致：tag 驱动版本号（Windows 产物元数据取自 pubspec.yaml）
+      - name: Resolve version
         shell: bash
         run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            NAME="${GITHUB_REF_NAME#v}"
+            CODE="${GITHUB_RUN_NUMBER}"
+            sed -i -E "s/^version:.*/version: ${NAME}+${CODE}/" pubspec.yaml
+            echo "tag 驱动版本: ${NAME}+${CODE}"
+          fi
           VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | tr -d '\r')
           echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
           echo "Building version: $VER"
@@ -399,8 +414,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | cut -d+ -f1 | tr -d '\r')
-          TAG="v$VER"
+          # build job 里 sed 改过的 pubspec.yaml 不在这个 workspace，tag 构建直接取 tag 名
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            VER=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | cut -d+ -f1 | tr -d '\r')
+            TAG="v$VER"
+          fi
           echo "Publishing $TAG"
           ls -lh release/android release/*.zip
           # 下载完整性校验：SHA-256 清单随包发布（应用内/代理下载后可对比）
