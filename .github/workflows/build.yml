@@ -25,7 +25,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 只负责把「依赖下载缓存」写到默认分支（main）。
+  # actions/cache 的读取范围是硬性的：一个 run 只能读「自己 ref + 默认分支」的缓存，
+  # 所以 tag 之间天然不共享；唯一解法是让 main 上一直有最新的一份。
+  # 缓存里只有 wrapper dists 与 modules-2（纯依赖下载，不含构建产物），
+  # 所以这里只做 pub get + gradle 依赖解析即可，不必跑完整构建。
+  warm-cache-linux:
+    if: github.event_name == 'push' && github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.8'
+          cache: true
+
+      - name: Cache gradle
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches/modules-2
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: 预热 Android 依赖
+        shell: bash
+        run: |
+          flutter pub get
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:dependencies --configuration releaseRuntimeClasspath > /dev/null
+
+  # Windows 侧同理：预热 Flutter Windows 工具链 + pub 缓存，让 tag 构建的 Setup Flutter 直接命中
+  warm-cache-windows:
+    if: github.event_name == 'push' && github.ref_type != 'tag'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.8'
+          cache: true
+
+      - name: 预热依赖
+        run: flutter pub get
+
   build-android:
+    # 推 main 只预热缓存，不重复全量构建；tag 与手动触发才产出安装包
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write # 失败时把构建日志贴到 commit comment，便于排查
@@ -294,6 +355,8 @@ jobs:
           if-no-files-found: error
 
   build-windows:
+    # 推 main 只预热缓存，不重复全量构建；tag 与手动触发才产出安装包
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - name: Checkout
