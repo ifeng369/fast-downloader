@@ -26,6 +26,23 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
   bool _submitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    _prefill();
+  }
+
+  /// 回填上次登录的账号密码（等 init 完成，避免抢跑拿到 null）
+  Future<void> _prefill() async {
+    await XunleiState.I.init();
+    if (!mounted) return;
+    final account = XunleiState.I.savedAccount ?? '';
+    if (_account.text.isEmpty && account.isNotEmpty) {
+      _account.text = account;
+      _password.text = XunleiState.I.savedPassword ?? '';
+    }
+  }
+
+  @override
   void dispose() {
     _account.dispose();
     _password.dispose();
@@ -166,11 +183,10 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
               fontSize: 12,
             ),
             const SizedBox(height: 20),
-            MiuixTextField(
+            MiuixLabelField(
               controller: _account,
               keyboardType: TextInputType.emailAddress,
               label: '手机号 / 邮箱',
-              useLabelAsPlaceholder: true,
               singleLine: true,
               leadingIcon: MiuixIcon(
                 icon: Icons.person_outline_rounded,
@@ -179,11 +195,10 @@ class _XunleiLoginPageState extends State<XunleiLoginPage> {
               ),
             ),
             const SizedBox(height: 14),
-            MiuixTextField(
+            MiuixLabelField(
               controller: _password,
               obscureText: _obscure,
               label: '密码',
-              useLabelAsPlaceholder: true,
               singleLine: true,
               onSubmitted: (_) => _submit(),
               leadingIcon: MiuixIcon(
@@ -329,10 +344,9 @@ class _ReviewKeyDialogState extends State<_ReviewKeyDialog> {
               const SizedBox(height: 12),
               MiuixText('② 验证完成后，复制页面显示的验证密钥（creditkey），粘贴到下面', fontSize: 13),
               const SizedBox(height: 8),
-              MiuixTextField(
+              MiuixLabelField(
                 controller: widget.controller,
                 label: '粘贴验证密钥 creditkey',
-                useLabelAsPlaceholder: true,
                 singleLine: true,
               ),
               const SizedBox(height: 16),

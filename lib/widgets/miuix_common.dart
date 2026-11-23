@@ -5,6 +5,9 @@ import 'package:flutter_miuix/miuix.dart';
 
 import '../app.dart';
 import '../theme/app_theme.dart';
+import 'miuix_label_field.dart';
+
+export 'miuix_label_field.dart';
 
 /// 全局 Miuix Snackbar 便捷入口。
 class MiuixToast {
@@ -147,8 +150,28 @@ Future<bool> confirmMiuix(
   required String content,
   String confirmText = '确定',
   bool danger = false,
+}) async {
+  final r = await confirmMiuixCheck(
+    context,
+    title: title,
+    content: content,
+    confirmText: confirmText,
+    danger: danger,
+  );
+  return r.$1;
+}
+
+/// 带可勾选项的确认框：返回 (是否确认, 是否勾选)。
+Future<(bool, bool)> confirmMiuixCheck(
+  BuildContext context, {
+  required String title,
+  required String content,
+  String checkText = '',
+  bool checkInitial = false,
+  String confirmText = '确定',
+  bool danger = false,
 }) {
-  final completer = Completer<bool>();
+  final completer = Completer<(bool, bool)>();
   MiuixOverlayPanel.show(
     context: context,
     builder: (_) => _MiuixConfirmDialog(
@@ -156,6 +179,8 @@ Future<bool> confirmMiuix(
       content: content,
       confirmText: confirmText,
       danger: danger,
+      checkText: checkText,
+      checkInitial: checkInitial,
       completer: completer,
     ),
   );
@@ -169,7 +194,9 @@ class _MiuixConfirmDialog extends StatefulWidget {
   final String content;
   final String confirmText;
   final bool danger;
-  final Completer<bool> completer;
+  final String checkText;
+  final bool checkInitial;
+  final Completer<(bool, bool)> completer;
 
   const _MiuixConfirmDialog({
     super.key,
@@ -177,6 +204,8 @@ class _MiuixConfirmDialog extends StatefulWidget {
     required this.content,
     required this.confirmText,
     required this.danger,
+    this.checkText = '',
+    this.checkInitial = false,
     required this.completer,
   });
 
@@ -186,6 +215,7 @@ class _MiuixConfirmDialog extends StatefulWidget {
 
 class _MiuixConfirmDialogState extends State<_MiuixConfirmDialog> {
   bool _closed = false;
+  late bool _checked = widget.checkInitial;
 
   void _finish(bool ok) {
     if (_closed) {
@@ -194,7 +224,7 @@ class _MiuixConfirmDialogState extends State<_MiuixConfirmDialog> {
       return;
     }
     _closed = true;
-    widget.completer.complete(ok);
+    widget.completer.complete((ok, _checked));
     MiuixOverlayPanel.hide();
   }
 
@@ -223,6 +253,32 @@ class _MiuixConfirmDialogState extends State<_MiuixConfirmDialog> {
               color: colors.onSurfaceSecondary,
               fontSize: 14,
             ),
+            if (widget.checkText.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              MiuixPressable(
+                onPressed: () => setState(() => _checked = !_checked),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  child: Row(
+                    children: [
+                      MiuixCheckbox(
+                        value: _checked,
+                        onChanged: (v) => setState(() => _checked = v ?? !_checked),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: MiuixText(
+                          widget.checkText,
+                          color: colors.onSurfaceSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             Row(
               children: [
@@ -431,10 +487,9 @@ class _MiuixInputDialogState extends State<_MiuixInputDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            MiuixTextField(
+            MiuixLabelField(
               controller: _field,
               label: widget.hint ?? widget.title,
-              useLabelAsPlaceholder: true,
               singleLine: true,
               autofocus: true,
               onSubmitted: (_) =>

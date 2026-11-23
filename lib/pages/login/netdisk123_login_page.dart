@@ -120,21 +120,19 @@ class _PasswordLoginViewState extends State<_PasswordLoginView> {
           fontSize: 12,
         ),
         const SizedBox(height: 20),
-        MiuixTextField(
+        MiuixLabelField(
           controller: _account,
           keyboardType: TextInputType.emailAddress,
           label: '手机号 / 邮箱',
-          useLabelAsPlaceholder: true,
           singleLine: true,
           leadingIcon: MiuixIcon(icon: Icons.person_outline_rounded,
               tint: colors.onSurfaceSecondary, size: 20),
         ),
         const SizedBox(height: 14),
-        MiuixTextField(
+        MiuixLabelField(
           controller: _password,
           obscureText: _obscure,
           label: '密码',
-          useLabelAsPlaceholder: true,
           singleLine: true,
           onSubmitted: (_) => _submit(),
           leadingIcon: MiuixIcon(icon: Icons.lock_outline_rounded,

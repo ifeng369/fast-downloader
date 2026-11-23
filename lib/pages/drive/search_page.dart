@@ -122,12 +122,11 @@ class _SearchPageState extends State<SearchPage> {
               Expanded(
                 child: SizedBox(
                   height: 40,
-                  child: MiuixTextField(
+                  child: MiuixLabelField(
                     controller: _controller,
                     onChanged: _onChanged,
                     onSubmitted: _search,
                     label: '搜索文件名或照片内容',
-                    useLabelAsPlaceholder: true,
                     singleLine: true,
                     leadingIcon: MiuixIcon(
                         icon: Icons.search_rounded,

@@ -14,6 +14,8 @@ class XunleiState extends ChangeNotifier {
   static const _kRefresh = 'xunlei_refresh_token';
   static const _kUser = 'xunlei_user_id';
   static const _kUsername = 'xunlei_username';
+  static const _kAccount = 'xunlei_account';
+  static const _kPassword = 'xunlei_password';
 
   static XunleiState? _instance;
   static XunleiState get I => _instance ??= XunleiState._();
@@ -24,7 +26,10 @@ class XunleiState extends ChangeNotifier {
   );
 
   String? username; // 登录账号（手机号/邮箱），仅本机展示
+  String? savedAccount; // 记住的账号（用于回填与自动登录）
+  String? savedPassword; // 记住的密码（仅安全存储，不进 SharedPreferences）
   bool _ready = false;
+  final Completer<void> _initCompleter = Completer<void>();
   Timer? _refreshTimer;
 
   /// 当前账号容量信息（-1 表示未拉取/不可用）
@@ -43,13 +48,15 @@ class XunleiState extends ChangeNotifier {
 
   /// 应用启动时恢复登录态；refresh_token 有效时自动续期
   Future<void> init() async {
-    if (_ready) return;
+    if (_ready) return _initCompleter.future;
     _ready = true;
     try {
       final access = await _read(_kAccess);
       final refresh = await _read(_kRefresh);
       final user = await _read(_kUser);
       username = await _read(_kUsername);
+      savedAccount = await _read(_kAccount);
+      savedPassword = await _read(_kPassword);
       // 设备 ID 与登录凭据绑定（对照 AList）：按 refresh_token 派生
       client.setTokens(
         access: access,
@@ -71,11 +78,21 @@ class XunleiState extends ChangeNotifier {
         if (err == null) {
           await _persist();
           notifyListeners();
+        } else {
+          // refresh_token 也失效了：清掉旧 token，交给下面的「记住的账号密码」重登
+          client.setTokens();
         }
+      }
+      // token 不可用但记住了账号密码 → 静默重新登录，避免每次启动都要手动输
+      if (!client.hasLogin && (savedAccount ?? '').isNotEmpty && (savedPassword ?? '').isNotEmpty) {
+        final err = await login(savedAccount!, savedPassword!);
+        AppLogger.I.i('xunlei', '自动登录 ${err == null ? '成功' : '失败: $err'}');
       }
       if (client.hasLogin) await refreshQuota();
     } catch (e) {
       AppLogger.I.e('xunlei', '恢复登录态失败: $e');
+    } finally {
+      if (!_initCompleter.isCompleted) _initCompleter.complete();
     }
   }
 
@@ -83,6 +100,13 @@ class XunleiState extends ChangeNotifier {
     final err = await client.refresh();
     if (err != null) {
       AppLogger.I.w('xunlei', '自动续期失败: $err');
+      // 续期失败时用记住的账号密码重登一次，避免需要手动登录
+      final acc = savedAccount ?? '';
+      final pwd = savedPassword ?? '';
+      if (acc.isNotEmpty && pwd.isNotEmpty) {
+        final e2 = await login(acc, pwd);
+        if (e2 == null) return null;
+      }
       return err;
     }
     await _persist();
@@ -102,6 +126,11 @@ class XunleiState extends ChangeNotifier {
       return err;
     }
     username = normalized;
+    savedAccount = normalized;
+    savedPassword = password;
+    // 密码只进安全存储，不写 SharedPreferences
+    await _writeSecure(_kAccount, normalized);
+    await _writeSecure(_kPassword, password);
     await _persist();
     _startRefresher();
     AppLogger.I.i('xunlei', '登录成功 user=${client.userId}');
@@ -132,7 +161,14 @@ class XunleiState extends ChangeNotifier {
     _usedSize = -1;
     _refreshTimer?.cancel();
     _refreshTimer = null;
-    for (final k in [_kAccess, _kRefresh, _kUser, _kUsername]) {
+    for (final k in [
+      _kAccess,
+      _kRefresh,
+      _kUser,
+      _kUsername,
+      _kAccount,
+      _kPassword,
+    ]) {
       try {
         await _secure.delete(key: k);
       } catch (_) {}
@@ -142,6 +178,8 @@ class XunleiState extends ChangeNotifier {
       } catch (_) {}
     }
     await WebCookies.clear();
+    savedAccount = null;
+    savedPassword = null;
     AppLogger.I.i('xunlei', '已退出登录');
     notifyListeners();
   }
@@ -177,6 +215,13 @@ class XunleiState extends ChangeNotifier {
     await _write(_kRefresh, client.refreshToken);
     await _write(_kUser, client.userId);
     if (username != null) await _write(_kUsername, username!);
+  }
+
+  Future<void> _writeSecure(String key, String value) async {
+    if (value.isEmpty) return;
+    try {
+      await _secure.write(key: key, value: value);
+    } catch (_) {}
   }
 
   Future<String> _read(String key) async {

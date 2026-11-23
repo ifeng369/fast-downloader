@@ -404,28 +404,25 @@ class _ParsePageState extends State<ParsePage> {
             ],
           ),
           const SizedBox(height: 14),
-          MiuixTextField(
+          MiuixLabelField(
             controller: _urlController,
             maxLines: 3,
             minLines: 2,
             label: '粘贴夸克分享链接或包含链接的文本',
-            useLabelAsPlaceholder: true,
           ),
           const SizedBox(height: 10),
-          MiuixTextField(
+          MiuixLabelField(
             controller: _pwdController,
             label: '提取码（自动识别，可手动修改）',
-            useLabelAsPlaceholder: true,
             singleLine: true,
           ),
           if (_btMode) ...[
             const SizedBox(height: 10),
-            MiuixTextField(
+            MiuixLabelField(
               controller: _btController,
               maxLines: 2,
               minLines: 1,
               label: '磁力链接或种子文件地址（magnet: 开头）',
-              useLabelAsPlaceholder: true,
             ),
           ],
           const SizedBox(height: 16),

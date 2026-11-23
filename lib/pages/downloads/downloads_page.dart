@@ -179,14 +179,29 @@ class _DownloadsPageState extends State<DownloadsPage>
         (icon: Icons.cleaning_services_rounded, text: '清除已完成', value: 'clearDone', color: null),
       ],
     ).then((v) async {
-      if (v == null) return;
+      if (v == null || !mounted) return;
       switch (v) {
         case 'pauseAll':
           await dm.pauseAllActive();
           _toast('已全部暂停');
         case 'clearDone':
-          await dm.clearDone();
-          _toast('已清除已完成任务');
+          final doneCount = dm.byStatus(GopeedStatus.done).length;
+          if (doneCount == 0) {
+            _toast('没有已完成的任务');
+            break;
+          }
+          final r = await confirmMiuixCheck(
+            context,
+            title: '清除已完成',
+            content: '将清除 $doneCount 个已完成任务。',
+            checkText: '同时删除已下载的文件',
+            checkInitial: false,
+            confirmText: '清除',
+            danger: true,
+          );
+          if (!r.$1) break;
+          await dm.clearDone(deleteFile: r.$2);
+          _toast(r.$2 ? '已清除任务并删除文件' : '已清除已完成任务');
       }
     });
   }

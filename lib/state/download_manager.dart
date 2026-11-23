@@ -112,11 +112,11 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
-  Future<void> clearDone() async {
+  Future<void> clearDone({bool deleteFile = false}) async {
     final doneIds = byStatus(GopeedStatus.done).map((t) => t.id).toList();
     if (doneIds.isEmpty) return;
     try {
-      await GopeedEngine.client.removeAll(ids: doneIds, force: false);
+      await GopeedEngine.client.removeAll(ids: doneIds, force: deleteFile);
     } finally {
       await _poll();
     }

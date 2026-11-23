@@ -96,12 +96,11 @@ class _CookieLoginViewState extends State<_CookieLoginView> {
           ),
           const SizedBox(height: 14),
           Expanded(
-            child: MiuixTextField(
+            child: MiuixLabelField(
               controller: _controller,
               maxLines: null,
               minLines: 6,
               label: '粘贴 Cookie，形如 __pus=xxx; __puus=xxx; ...',
-              useLabelAsPlaceholder: true,
             ),
           ),
           if (_error != null) ...[
