@@ -20,6 +20,7 @@ import '../../widgets/file_icon.dart';
 import '../../widgets/miuix_common.dart';
 import 'move_target_page.dart';
 import 'search_page.dart';
+import '../login/login_page.dart';
 
 class DrivePage extends StatefulWidget {
   final String initialDirFid;
@@ -640,12 +641,23 @@ class _DrivePageState extends State<DrivePage>
     );
   }
 
+  /// 重新登录：跳到对应网盘的登录页，返回后重新加载目录
+  Future<void> _relogin() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const LoginPage(),
+    ));
+    if (!mounted) return;
+    _error = null;
+    await _load();
+  }
+
   Widget _buildBody() {
     if (!AppState.I.isLoggedIn) {
       return BodySwitcher(child: const EmptyView(icon: Icons.lock_outline_rounded, text: '登录后查看网盘文件', subText: '请在「我的」页面登录夸克账号'));
     }
+
     if (_error != null && _files.isEmpty) {
-      return BodySwitcher(child: EmptyView(icon: Icons.cloud_off_rounded, text: '加载失败', subText: _error, action: MiuixTextButton('重试', onPressed: _load)));
+      return BodySwitcher(child: EmptyView(icon: Icons.cloud_off_rounded, text: '加载失败', subText: _error, action: driveErrorAction(onRetry: _load, onRelogin: () => _relogin())));
     }
     if (_loading && _files.isEmpty) {
       return BodySwitcher(child: const Center(child: MiuixCircularProgressIndicator()));

@@ -704,3 +704,18 @@ Widget MiuixFilterTabs({
 }
 
 /// 阻塞式进度弹窗已移除：删除进度改为选栏内联显示，避免与 MiuixOverlayPanel 遮罩混用。
+
+/// 网盘目录加载失败时的操作区：重试 + 重新登录
+Widget driveErrorAction({
+  required VoidCallback onRetry,
+  required VoidCallback onRelogin,
+}) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      MiuixTextButton('重试', onPressed: onRetry),
+      const SizedBox(width: 4),
+      MiuixTextButton('重新登录', onPressed: onRelogin),
+    ],
+  );
+}

@@ -394,6 +394,16 @@ class _UcDrivePageState extends State<UcDrivePage> {
     );
   }
 
+  /// 重新登录：跳到对应网盘的登录页，返回后重新加载目录
+  Future<void> _relogin() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const UcLoginPage(),
+    ));
+    if (!mounted) return;
+    _error = null;
+    await _load();
+  }
+
   Widget _buildBody() {
     if (_authExpired) {
       return BodySwitcher(
@@ -415,13 +425,14 @@ class _UcDrivePageState extends State<UcDrivePage> {
         ),
       );
     }
+
     if (_error != null && _files.isEmpty) {
       return BodySwitcher(
         child: EmptyView(
           icon: Icons.cloud_off_rounded,
           text: '加载失败',
           subText: _error,
-          action: MiuixTextButton('重试', onPressed: _load),
+          action: driveErrorAction(onRetry: _load, onRelogin: () => _relogin()),
         ),
       );
     }

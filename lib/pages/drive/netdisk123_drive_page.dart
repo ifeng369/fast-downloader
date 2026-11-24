@@ -15,6 +15,7 @@ import '../../widgets/empty_view.dart';
 import '../../widgets/file_icon.dart';
 import '../../widgets/file_list_anim.dart';
 import '../../widgets/miuix_common.dart';
+import '../login/netdisk123_login_page.dart';
 
 /// 123 网盘文件浏览页（面包屑导航 + 多选批量下载）
 class Netdisk123DrivePage extends StatefulWidget {
@@ -503,12 +504,23 @@ class _Netdisk123DrivePageState extends State<Netdisk123DrivePage> {
     );
   }
 
+  /// 重新登录：跳到对应网盘的登录页，返回后重新加载目录
+  Future<void> _relogin() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const Netdisk123LoginPage(),
+    ));
+    if (!mounted) return;
+    _error = null;
+    await _load();
+  }
+
   Widget _buildBody() {
     if (!Netdisk123State.I.isLoggedIn) {
       return BodySwitcher(child: const EmptyView(icon: Icons.lock_outline_rounded, text: '未登录 123 网盘', subText: '请在网盘首页点击 123 网盘登录'));
     }
+
     if (_error != null && _files.isEmpty) {
-      return BodySwitcher(child: EmptyView(icon: Icons.cloud_off_rounded, text: '加载失败', subText: _error, action: MiuixTextButton('重试', onPressed: _load)));
+      return BodySwitcher(child: EmptyView(icon: Icons.cloud_off_rounded, text: '加载失败', subText: _error, action: driveErrorAction(onRetry: _load, onRelogin: () => _relogin())));
     }
     if (_loading && _files.isEmpty) {
       return BodySwitcher(child: const Center(child: MiuixCircularProgressIndicator()));

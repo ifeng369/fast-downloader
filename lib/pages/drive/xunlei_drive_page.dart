@@ -13,6 +13,7 @@ import '../../widgets/empty_view.dart';
 import '../../widgets/file_icon.dart';
 import '../../widgets/file_list_anim.dart';
 import '../../widgets/miuix_common.dart';
+import '../login/xunlei_login_page.dart';
 
 /// 迅雷云盘文件浏览页（面包屑导航 + 多选批量下载）
 class XunleiDrivePage extends StatefulWidget {
@@ -379,12 +380,23 @@ class _XunleiDrivePageState extends State<XunleiDrivePage> {
     );
   }
 
+  /// 重新登录：跳到对应网盘的登录页，返回后重新加载目录
+  Future<void> _relogin() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const XunleiLoginPage(),
+    ));
+    if (!mounted) return;
+    _error = null;
+    await _load();
+  }
+
   Widget _buildBody() {
     if (!XunleiState.I.isLoggedIn) {
       return BodySwitcher(child: const EmptyView(icon: Icons.lock_outline_rounded, text: '未登录迅雷云盘', subText: '请在网盘首页点击迅雷云盘登录'));
     }
+
     if (_error != null && _files.isEmpty) {
-      return BodySwitcher(child: EmptyView(icon: Icons.cloud_off_rounded, text: '加载失败', subText: _error, action: MiuixTextButton('重试', onPressed: _load)));
+      return BodySwitcher(child: EmptyView(icon: Icons.cloud_off_rounded, text: '加载失败', subText: _error, action: driveErrorAction(onRetry: _load, onRelogin: () => _relogin())));
     }
     if (_loading && _files.isEmpty) {
       return BodySwitcher(child: const Center(child: MiuixCircularProgressIndicator()));
