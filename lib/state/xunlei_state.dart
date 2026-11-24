@@ -16,6 +16,7 @@ class XunleiState extends ChangeNotifier {
   static const _kUsername = 'xunlei_username';
   static const _kAccount = 'xunlei_account';
   static const _kPassword = 'xunlei_password';
+  static const _kAutoLogin = 'xunlei_auto_login';
 
   static XunleiState? _instance;
   static XunleiState get I => _instance ??= XunleiState._();
@@ -84,7 +85,12 @@ class XunleiState extends ChangeNotifier {
         }
       }
       // token 不可用但记住了账号密码 → 静默重新登录，避免每次启动都要手动输
-      if (!client.hasLogin && (savedAccount ?? '').isNotEmpty && (savedPassword ?? '').isNotEmpty) {
+      // （用户主动「退出登录」后 autoLogin=false，只回填不自动登录）
+      final autoLogin = (await _read(_kAutoLogin)) != '0';
+      if (!client.hasLogin &&
+          autoLogin &&
+          (savedAccount ?? '').isNotEmpty &&
+          (savedPassword ?? '').isNotEmpty) {
         final err = await login(savedAccount!, savedPassword!);
         AppLogger.I.i('xunlei', '自动登录 ${err == null ? '成功' : '失败: $err'}');
       }
@@ -131,6 +137,7 @@ class XunleiState extends ChangeNotifier {
     // 密码只进安全存储，不写 SharedPreferences
     await _writeSecure(_kAccount, normalized);
     await _writeSecure(_kPassword, password);
+    await _setAutoLogin(true);
     await _persist();
     _startRefresher();
     AppLogger.I.i('xunlei', '登录成功 user=${client.userId}');
@@ -166,8 +173,6 @@ class XunleiState extends ChangeNotifier {
       _kRefresh,
       _kUser,
       _kUsername,
-      _kAccount,
-      _kPassword,
     ]) {
       try {
         await _secure.delete(key: k);
@@ -178,9 +183,9 @@ class XunleiState extends ChangeNotifier {
       } catch (_) {}
     }
     await WebCookies.clear();
-    savedAccount = null;
-    savedPassword = null;
-    AppLogger.I.i('xunlei', '已退出登录');
+    await _setAutoLogin(false);
+    // 退出登录不清除记住的账号密码：下次打开登录页会自动回填（仍待用户确认后才登录）
+    AppLogger.I.i('xunlei', '已退出登录（保留记住的账号）');
     notifyListeners();
   }
 
@@ -221,6 +226,14 @@ class XunleiState extends ChangeNotifier {
     if (value.isEmpty) return;
     try {
       await _secure.write(key: key, value: value);
+    } catch (_) {}
+  }
+
+  /// 记录用户是否希望自动登录（主动退出后置 false，只回填不自动登录）
+  Future<void> _setAutoLogin(bool on) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kAutoLogin, on ? '1' : '0');
     } catch (_) {}
   }
 
