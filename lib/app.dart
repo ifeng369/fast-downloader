@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
+import 'core/auto_updater.dart';
 import 'core/gopeed/gopeed_boot.dart';
 import 'core/notify/download_notifier.dart';
 import 'core/update_checker.dart';
@@ -48,6 +49,8 @@ class _QuarkLiteAppState extends State<QuarkLiteApp>
     // 从浏览器「分享」回到前台时，原生侧可能刚收到 ACTION_SEND
     if (state == AppLifecycleState.resumed) {
       unawaited(_consumeSharedText());
+      // 从「安装未知应用」授权页返回后，继续安装更新包
+      unawaited(AutoUpdater.retryPendingInstall());
     }
   }
 
@@ -74,14 +77,18 @@ class _QuarkLiteAppState extends State<QuarkLiteApp>
     unawaited(XunleiState.I.init());
     unawaited(UcState.I.init());
     unawaited(Netdisk123State.I.init());
+    unawaited(AutoUpdater.init());
     unawaited(_bootEngine());
     DownloadManager.I.startPolling();
     if (mounted) {
       setState(() => _ready = true);
       // 冷启动：可能是从浏览器「分享」进来的
       unawaited(_consumeSharedText());
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(UpdateChecker.checkAndPrompt(context));
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        // 启动后异步检测更新：延迟一小会儿，避免和首屏加载/引擎启动抢网络
+        await Future<void>.delayed(const Duration(seconds: 3));
+        if (!mounted) return;
+        unawaited(UpdateChecker.checkAndPrompt(context));
       });
     }
   }

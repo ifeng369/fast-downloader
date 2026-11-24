@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../state/download_service.dart';
 import '../widgets/miuix_common.dart';
+import 'auto_updater.dart';
 
 /// 平台对应的安装包（latest.json 里的 assets 条目）
 class UpdateAsset {
@@ -209,6 +210,13 @@ class UpdateChecker {
         return;
       }
       if (!manual && await _isSkipped(update.version)) return;
+      // 该版本的更新包已在下载/等待安装：不再重复弹窗
+      if (AutoUpdater.isPendingVersion(update.version)) {
+        if (manual) {
+          MiuixToast.show('${update.version} 的更新包正在下载或等待安装');
+        }
+        return;
+      }
       final notes = update.notes.isEmpty ? '' : '\n\n${update.notes}';
       final asset = update.asset;
       final choice = await miuixChoiceDialog<String>(
@@ -258,15 +266,27 @@ class UpdateChecker {
               cookie: '',
               referer: 'https://github.com/',
             );
+            if (err == null) await _markPending(update, target);
             MiuixToast.show(err == null ? '代理不可用，已改用直连下载：${target.name}' : err);
             return;
           }
+          if (err == null) await _markPending(update, target);
           MiuixToast.show(err == null ? '已加入下载任务：${target.name}' : err);
       }
     } finally {
       _inFlight = false;
       checking.value = false;
     }
+  }
+
+  /// 记录「更新包已加入下载队列」：下载完成后由 AutoUpdater 自动安装
+  static Future<void> _markPending(AppUpdate update, UpdateAsset asset) async {
+    if (kIsWeb) return;
+    if (!Platform.isAndroid && !Platform.isWindows) return;
+    await AutoUpdater.markPending(
+      version: update.version,
+      fileName: asset.name,
+    );
   }
 
   static Future<bool> _isSkipped(String version) async {

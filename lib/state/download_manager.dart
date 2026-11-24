@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/auto_updater.dart';
 import '../core/gopeed/gopeed_boot.dart';
 import '../core/gopeed/gopeed_models.dart';
 import '../core/notify/download_notifier.dart';
@@ -68,6 +69,8 @@ class DownloadManager extends ChangeNotifier {
       engineError = null;
       notifyListeners();
       DownloadNotifier.update(list);
+      // 自动更新：更新包下载完成后安装 / 覆盖重启
+      unawaited(AutoUpdater.onTasks(list));
     } catch (e) {
       _failed = true;
       engineError = e.toString();
