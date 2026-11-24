@@ -229,14 +229,25 @@ class AutoUpdater {
   static Future<void> _runWindowsUpdate(String zipPath) async {
     final exe = Platform.resolvedExecutable;
     final dir = File(exe).parent.path;
-    final zip = zipPath.replaceAll('/', '\\');
     final target = dir.replaceAll('/', '\\');
     final exeWin = exe.replaceAll('/', '\\');
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final logPath =
-        '${Directory.systemTemp.path}\\fd_update_$ts.log'.replaceAll('/', '\\');
-    final script = File('${Directory.systemTemp.path}\\fd_update_$ts.ps1');
-    final ps = '''
+    final tmp = Directory.systemTemp.path.replaceAll('/', '\\');
+    final logPath = '$tmp\\fd_update_$ts.log';
+    final script = File('$tmp\\fd_update_$ts.ps1');
+    // 先把更新包复制到纯 ASCII 的临时目录：脚本里就不出现中文路径，
+    // 避免 Windows PowerShell 5.1 按 ANSI 码页读取脚本导致路径乱码
+    final staged = File('$tmp\\fd_update_$ts.zip');
+    try {
+      await File(zipPath).copy(staged.path);
+    } catch (e) {
+      AppLogger.I.e('update', '复制更新包失败: $e');
+      MiuixToast.show('更新包准备失败：$e');
+      return;
+    }
+    final zip = staged.path;
+    final ps = '\uFEFF'
+        '''
 \$ErrorActionPreference = 'Stop'
 \$log = '$logPath'
 \$zip = '$zip'
@@ -245,20 +256,47 @@ class AutoUpdater {
 function Write-Log(\$m) {
   try { ((Get-Date -Format 'HH:mm:ss') + ' ' + \$m) | Out-File -FilePath \$log -Append -Encoding utf8 } catch {}
 }
+Write-Log 'start'
 try {
-  Write-Log 'wait for app exit'
-  try { Wait-Process -Id $pid -Timeout 120 -ErrorAction Stop } catch { Write-Log ('wait: ' + \$_.Exception.Message) }
-  Start-Sleep -Milliseconds 1200
+  Wait-Process -Id $pid -Timeout 120 -ErrorAction Stop
+  Write-Log 'app exited'
+} catch { Write-Log ('wait: ' + \$_.Exception.Message) }
+Start-Sleep -Milliseconds 1200
+try {
   Get-Process -Name 'gopeed' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  Start-Sleep -Milliseconds 600
-  Write-Log ('extract ' + \$zip + ' -> ' + \$target)
-  Expand-Archive -LiteralPath \$zip -DestinationPath \$target -Force
-  Write-Log 'extract ok'
+  Write-Log 'gopeed stopped'
+} catch {}
+Start-Sleep -Milliseconds 600
+\$ok = \$false
+for (\$i = 0; \$i -lt 4; \$i++) {
+  try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+    \$za = [System.IO.Compression.ZipFile]::OpenRead(\$zip)
+    \$n = 0
+    foreach (\$e in \$za.Entries) {
+      if ([string]::IsNullOrEmpty(\$e.Name)) { continue }
+      \$dest = Join-Path \$target (\$e.FullName.Replace('/', '\\'))
+      \$d = [System.IO.Path]::GetDirectoryName(\$dest)
+      if (-not [System.IO.Directory]::Exists(\$d)) { [System.IO.Directory]::CreateDirectory(\$d) | Out-Null }
+      [System.IO.Compression.ZipFileExtensions]::ExtractToFile(\$e, \$dest, \$true)
+      \$n++
+    }
+    \$za.Dispose()
+    Write-Log ('extract ok, files=' + \$n)
+    \$ok = \$true
+    break
+  } catch {
+    Write-Log ('extract retry ' + \$i + ': ' + \$_.Exception.Message)
+    if (\$za) { try { \$za.Dispose() } catch {} }
+    Start-Sleep -Seconds 2
+  }
+}
+if (-not \$ok) { Write-Log 'FAILED: extract' }
+try { Remove-Item -LiteralPath \$zip -Force -ErrorAction SilentlyContinue } catch {}
+try {
   Start-Process -FilePath \$exe -WorkingDirectory \$target
   Write-Log 'restarted'
-} catch {
-  Write-Log ('FAILED: ' + \$_.Exception.Message)
-}
+} catch { Write-Log ('restart failed: ' + \$_.Exception.Message) }
 ''';
     final writable = _canWrite(dir);
     try {
