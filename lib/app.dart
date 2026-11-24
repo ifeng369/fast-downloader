@@ -77,7 +77,7 @@ class _QuarkLiteAppState extends State<QuarkLiteApp>
     unawaited(XunleiState.I.init());
     unawaited(UcState.I.init());
     unawaited(Netdisk123State.I.init());
-    unawaited(AutoUpdater.init());
+    unawaited(AutoUpdater.init(currentVersion: UpdateChecker.currentVersion));
     unawaited(_bootEngine());
     DownloadManager.I.startPolling();
     if (mounted) {

@@ -252,9 +252,11 @@ class UpdateChecker {
           final target = update.asset;
           if (target == null) return;
           final viaProxy = choice == 'proxy';
+          // 文件名带版本号：避免与历史更新包重名被 Gopeed 改名，也便于精确匹配
+          final fileName = _versionedFileName(target.name, update.version);
           var err = await DownloadService.addDirectUrl(
             url: (viaProxy ? proxyUrl(target.url) : target.url).toString(),
-            fileName: target.name,
+            fileName: fileName,
             cookie: '',
             referer: 'https://github.com/',
           );
@@ -262,16 +264,16 @@ class UpdateChecker {
             // 代理不可用/不稳定：自动回退直连
             err = await DownloadService.addDirectUrl(
               url: target.url.toString(),
-              fileName: target.name,
+              fileName: fileName,
               cookie: '',
               referer: 'https://github.com/',
             );
-            if (err == null) await _markPending(update, target);
-            MiuixToast.show(err == null ? '代理不可用，已改用直连下载：${target.name}' : err);
+            if (err == null) await _markPending(update, fileName);
+            MiuixToast.show(err == null ? '代理不可用，已改用直连下载：$fileName' : err);
             return;
           }
-          if (err == null) await _markPending(update, target);
-          MiuixToast.show(err == null ? '已加入下载任务：${target.name}' : err);
+          if (err == null) await _markPending(update, fileName);
+          MiuixToast.show(err == null ? '已加入下载任务：$fileName' : err);
       }
     } finally {
       _inFlight = false;
@@ -279,13 +281,21 @@ class UpdateChecker {
     }
   }
 
+  /// 给更新包文件名插入版本号：fast-downloader-windows-x64-1.3.31.zip
+  static String _versionedFileName(String name, String version) {
+    if (version.isEmpty || name.contains('-$version')) return name;
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0) return '$name-$version';
+    return '${name.substring(0, dot)}-$version${name.substring(dot)}';
+  }
+
   /// 记录「更新包已加入下载队列」：下载完成后由 AutoUpdater 自动安装
-  static Future<void> _markPending(AppUpdate update, UpdateAsset asset) async {
+  static Future<void> _markPending(AppUpdate update, String fileName) async {
     if (kIsWeb) return;
     if (!Platform.isAndroid && !Platform.isWindows) return;
     await AutoUpdater.markPending(
       version: update.version,
-      fileName: asset.name,
+      fileName: fileName,
     );
   }
 
