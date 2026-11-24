@@ -301,37 +301,43 @@ try {
     final writable = _canWrite(dir);
     try {
       await script.writeAsString(ps, flush: true);
-      if (writable) {
-        await Process.start(
-          'powershell.exe',
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-WindowStyle',
-            'Hidden',
-            '-File',
-            script.path,
-          ],
-          mode: ProcessStartMode.detached,
-        );
-      } else {
-        // 安装目录受保护（如 Program Files）：用 UAC 提权运行同一脚本
-        final argList =
-            "@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File','${script.path.replaceAll('/', '\\')}')";
-        await Process.start(
-          'powershell.exe',
-          [
-            '-NoProfile',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-Command',
-            "Start-Process -FilePath powershell.exe -ArgumentList $argList -Verb RunAs",
-          ],
-          mode: ProcessStartMode.detached,
-        );
+      // 必须经 `cmd /c start` 间接拉起 PowerShell：Dart 的 ProcessStartMode.detached
+      // 直接启动 powershell.exe 时，子进程会随本进程退出静默消失（实测脚本一行都没执行、
+      // 连日志都没生成），而 cmd start 起的是独立进程，能在本进程退出后继续跑。
+      const psCommon = [
+        'powershell.exe',
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-WindowStyle',
+        'Hidden',
+      ];
+      final psArgs = writable
+          ? ['-File', script.path]
+          : [
+              '-Command',
+              "Start-Process -FilePath powershell.exe -ArgumentList "
+                  "'-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden',"
+                  "'-File','${script.path.replaceAll('/', '\\')}' -Verb RunAs",
+            ];
+      await Process.start(
+        'cmd.exe',
+        ['/c', 'start', '', ...psCommon, ...psArgs],
+        mode: ProcessStartMode.detached,
+      );
+      // 等脚本写出第一行日志，确认它真的跑起来了（最多 3 秒）
+      final logFile = File(logPath);
+      for (var i = 0; i < 15; i++) {
+        if (logFile.existsSync()) break;
+        await Future<void>.delayed(const Duration(milliseconds: 200));
       }
+      AppLogger.I.i(
+        'update',
+        logFile.existsSync()
+            ? '更新脚本已启动: ${logFile.path}'
+            : '更新脚本未写出日志: ${logFile.path}',
+      );
     } catch (e) {
       AppLogger.I.e('update', '启动更新脚本失败: $e');
       MiuixToast.show('启动更新程序失败：$e');
