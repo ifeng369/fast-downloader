@@ -6,11 +6,14 @@ import 'package:flutter_miuix/miuix.dart';
 
 import '../../core/gopeed/gopeed_boot.dart';
 import '../../core/gopeed/gopeed_models.dart';
+import '../../core/update_checker.dart';
 import '../../state/app_state.dart';
 import '../../state/download_manager.dart';
+import '../../state/download_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/format.dart';
+import '../../utils/link_utils.dart';
 import '../../widgets/empty_view.dart';
 import '../../widgets/file_icon.dart';
 import '../../widgets/file_list_anim.dart';
@@ -508,6 +511,8 @@ class _DownloadsPageState extends State<DownloadsPage>
         (icon: Icons.folder_open_rounded, text: '打开文件夹', value: 'folder', color: null),
       if (isApk)
         (icon: Icons.android_rounded, text: '安装 APK', value: 'install', color: null),
+      if (isGithubUrl(task.url))
+        (icon: Icons.cloud_download_rounded, text: '代理下载', value: 'proxy', color: null),
       if (!done && !failed && !paused)
         (icon: Icons.pause_rounded, text: '暂停', value: 'pause', color: null),
       if (paused)
@@ -523,6 +528,8 @@ class _DownloadsPageState extends State<DownloadsPage>
           await _openFolder(task);
         case 'install':
           await _installApk(task);
+        case 'proxy':
+          await _proxyDownload(task);
         case 'pause':
           await DownloadManager.I.pauseTask(task);
         case 'resume':
@@ -644,6 +651,27 @@ class _DownloadsPageState extends State<DownloadsPage>
         _toast('请允许「安装未知应用」，返回后再次点击「安装 APK」');
       default:
         _toast('安装失败: ${r ?? '未知错误'}');
+    }
+  }
+
+  /// 用 gh.ifeng369.top 代理重新添加该 GitHub 任务
+  Future<void> _proxyDownload(GopeedTask task) async {
+    if (task.url.isEmpty) {
+      _toast('该任务没有可用的下载地址');
+      return;
+    }
+    try {
+      final proxy = UpdateChecker.proxyUrl(Uri.parse(task.url)).toString();
+      await DownloadService.addDirectUrl(
+        url: proxy,
+        fileName: task.name,
+        cookie: '',
+        referer: 'https://github.com/',
+      );
+      DownloadManager.I.startPolling();
+      _toast('已添加代理下载任务');
+    } catch (e) {
+      _toast('代理下载失败: $e');
     }
   }
 

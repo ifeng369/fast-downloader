@@ -11,6 +11,7 @@ import '../../state/download_service.dart';
 import '../../state/share_inbox.dart';
 import '../../state/uc_state.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/link_utils.dart';
 import '../../widgets/file_list_anim.dart';
 import '../../widgets/miuix_common.dart';
 import '../drive/netdisk123_accounts_page.dart';
@@ -19,7 +20,9 @@ import 'netdisk123_share_page.dart';
 import 'share_files_page.dart';
 import 'uc_share_page.dart';
 
-enum ShareType { quark, uc, netdisk123, xunlei, magnet, unknown }
+enum ShareType { quark, uc, netdisk123, xunlei, magnet, direct, unknown }
+
+
 
 class ParsePage extends StatefulWidget {
   const ParsePage({super.key});
@@ -91,6 +94,7 @@ class _ParsePageState extends State<ParsePage> {
   ShareType _detectType(String s) {
     final v = s.trim().toLowerCase();
     if (v.startsWith('magnet:')) return ShareType.magnet;
+    if (isDirectFileUrl(v)) return ShareType.direct;
     if (v.contains('drive.uc.cn/s/') || v.contains('fast.uc.cn/s/')) {
       return ShareType.uc;
     }
@@ -101,8 +105,8 @@ class _ParsePageState extends State<ParsePage> {
     if (v.startsWith('http')) return ShareType.quark;
     return ShareType.unknown;
   }
-  String _typeLabel(ShareType t) { switch(t){ case ShareType.quark: return '夸克分享'; case ShareType.uc: return 'UC 分享'; case ShareType.netdisk123: return '123 网盘'; case ShareType.xunlei: return '迅雷分享'; case ShareType.magnet: return '磁力/BT'; case ShareType.unknown: return '自动识别'; } }
-  IconData _typeIcon(ShareType t) { switch(t){ case ShareType.quark: return Icons.cloud_rounded; case ShareType.uc: return Icons.cloud_done_rounded; case ShareType.netdisk123: return Icons.cloud_upload_rounded; case ShareType.xunlei: return Icons.bolt_rounded; case ShareType.magnet: return Icons.wifi_tethering_rounded; case ShareType.unknown: return Icons.search_rounded; } }
+  String _typeLabel(ShareType t) { switch(t){ case ShareType.quark: return '夸克分享'; case ShareType.uc: return 'UC 分享'; case ShareType.netdisk123: return '123 网盘'; case ShareType.xunlei: return '迅雷分享'; case ShareType.magnet: return '磁力/BT'; case ShareType.direct: return '直链下载'; case ShareType.unknown: return '自动识别'; } }
+  IconData _typeIcon(ShareType t) { switch(t){ case ShareType.quark: return Icons.cloud_rounded; case ShareType.uc: return Icons.cloud_done_rounded; case ShareType.netdisk123: return Icons.cloud_upload_rounded; case ShareType.xunlei: return Icons.bolt_rounded; case ShareType.magnet: return Icons.wifi_tethering_rounded; case ShareType.direct: return Icons.link_rounded; case ShareType.unknown: return Icons.search_rounded; } }
   Future<void> _loadHistory() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('parse_history');
@@ -160,6 +164,12 @@ class _ParsePageState extends State<ParsePage> {
     final url = urls.first;
     if (url.startsWith('magnet:')) {
       await _addBt(url);
+      return;
+    }
+
+    // GitHub / 普通直链：直接入队下载（GitHub 可在下载管理里换代理重下）
+    if (isDirectFileUrl(url)) {
+      await _addDirect(url);
       return;
     }
 
@@ -274,6 +284,27 @@ class _ParsePageState extends State<ParsePage> {
       ));
     } catch (e) {
       _toast('解析失败: $e');
+    } finally {
+      if (mounted) setState(() => _parsing = false);
+    }
+  }
+
+  /// 直链（含 GitHub）直接入队
+  Future<void> _addDirect(String url) async {
+    setState(() => _parsing = true);
+    try {
+      final name = fileNameOfUrl(url);
+      final err = await DownloadService.addDirectUrl(
+        url: url,
+        fileName: name,
+        cookie: '',
+        referer: isGithubUrl(url) ? 'https://github.com/' : null,
+      );
+      if (err != null) throw Exception(err);
+      _toast('已加入下载队列：$name');
+      DownloadManager.I.startPolling();
+    } catch (e) {
+      _toast('添加失败: $e');
     } finally {
       if (mounted) setState(() => _parsing = false);
     }

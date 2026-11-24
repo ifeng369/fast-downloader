@@ -62,6 +62,9 @@ class GopeedTask {
   /// 下载文件的绝对路径（来自 Gopeed meta.opts.path + name；未知时为空）
   final String filePath;
 
+  /// 原始下载地址（取自 Gopeed meta.req.url，用于判断来源站点）
+  final String url;
+
   GopeedTask({
     required this.id,
     required this.name,
@@ -71,6 +74,7 @@ class GopeedTask {
     required this.speed,
     required this.createdAt,
     this.filePath = '',
+    this.url = '',
   });
 
   double get progress =>
@@ -81,6 +85,7 @@ class GopeedTask {
     final meta = json['meta'] as Map<String, dynamic>? ?? const {};
     final res = meta['res'] as Map<String, dynamic>? ?? const {};
     final opts = meta['opts'] as Map<String, dynamic>? ?? const {};
+    final req = meta['req'] as Map<String, dynamic>? ?? const {};
     final dir = opts['path']?.toString() ?? '';
     final optName = opts['name']?.toString() ?? '';
     final filePath = dir.isEmpty
@@ -95,6 +100,7 @@ class GopeedTask {
       speed: toInt(progress['speed']),
       createdAt: toInt(json['createdAt']),
       filePath: filePath,
+      url: (req['url'] ?? '').toString(),
     );
   }
 }
