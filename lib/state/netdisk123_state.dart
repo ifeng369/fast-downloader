@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -47,6 +48,9 @@ class Netdisk123State extends ChangeNotifier {
   static const _kToken = 'netdisk123_token';
   static const _kPassword = 'netdisk123_password';
   static const _kUsername = 'netdisk123_username';
+  // 记住的登录账号密码（退出登录不清除，仅用于表单回填）
+  static const _kSavedAccount = 'netdisk123_saved_account';
+  static const _kSavedPassword = 'netdisk123_saved_password';
 
   static Netdisk123State? _instance;
   static Netdisk123State get I => _instance ??= Netdisk123State._();
@@ -59,6 +63,12 @@ class Netdisk123State extends ChangeNotifier {
   List<Netdisk123Account> accounts = [];
   String? _activeId;
   bool _ready = false;
+
+  /// 记住的账号密码（密码只写安全存储）
+  String? savedAccount;
+  String? savedPassword;
+
+  final Completer<void> _initCompleter = Completer<void>();
 
   /// 当前活跃账号的容量信息（-1 表示未拉取/不可用）
   int _totalSize = -1;
@@ -95,9 +105,11 @@ class Netdisk123State extends ChangeNotifier {
 
   /// 应用启动时恢复登录态
   Future<void> init() async {
-    if (_ready) return;
+    if (_ready) return _initCompleter.future;
     _ready = true;
     try {
+      savedAccount = await _read(_kSavedAccount);
+      savedPassword = await _read(_kSavedPassword);
       await _loadAccounts();
       // 兼容旧单账号迁移
       if (accounts.isEmpty) {
@@ -161,6 +173,7 @@ class Netdisk123State extends ChangeNotifier {
     } catch (e) {
       AppLogger.I.e('netdisk123', '恢复登录态失败: $e');
     }
+    if (!_initCompleter.isCompleted) _initCompleter.complete();
     notifyListeners();
   }
 
@@ -190,6 +203,10 @@ class Netdisk123State extends ChangeNotifier {
       client.setCredentials(account.trim(), password);
     }
     await _persistAccounts();
+    savedAccount = account.trim();
+    savedPassword = password;
+    await _writeSecure(_kSavedAccount, savedAccount!);
+    await _writeSecure(_kSavedPassword, savedPassword!);
     AppLogger.I.i('netdisk123', '登录成功 account=$account 账号数=${accounts.length}');
     await refreshQuota();
     notifyListeners();
@@ -355,6 +372,15 @@ class Netdisk123State extends ChangeNotifier {
   }
 
   // ------------- 持久化 -------------
+
+  /// 只写安全存储（密码不落 SharedPreferences 明文）
+  Future<void> _writeSecure(String key, String value) async {
+    try {
+      await _secure.write(key: key, value: value);
+    } catch (e) {
+      AppLogger.I.w('netdisk123', '写入安全存储失败 $key: $e');
+    }
+  }
 
   Future<void> _loadAccounts() async {
     final raw = await _read(_kAccounts);

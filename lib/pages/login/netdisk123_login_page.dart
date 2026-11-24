@@ -79,6 +79,25 @@ class _PasswordLoginViewState extends State<_PasswordLoginView> {
   bool _submitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    _prefill();
+  }
+
+  /// 回填上次登录成功的账号密码
+  Future<void> _prefill() async {
+    await Netdisk123State.I.init();
+    if (!mounted) return;
+    final state = Netdisk123State.I;
+    final account = state.savedAccount ?? state.active?.username ?? '';
+    final password = state.savedPassword ?? state.active?.password ?? '';
+    if (account.isEmpty && password.isEmpty) return;
+    if (_account.text.isEmpty) _account.text = account;
+    if (_password.text.isEmpty) _password.text = password;
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
     _account.dispose();
     _password.dispose();
